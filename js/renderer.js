@@ -97,6 +97,20 @@ export class Renderer {
     }
   }
 
+  /** Подпись под узлом (статус) */
+  _getNodeSubtitle(node) {
+    if (node.type === 'PostgreSQL') {
+      const conn = node.activeConnections;
+      const max = node.maxConnections;
+      const db = node.dbSize;
+      return `${conn}/${max} conn · DB: ${db}`;
+    }
+    if (node.type === 'Backend' && node.pendingParents > 0) {
+      return `pending: ${node.pendingParents}`;
+    }
+    return null;
+  }
+
   /** Нарисовать линию-черновик при создании связи */
   drawDraftLine(fromNode, mouseX, mouseY) {
     const ctx = this.ctx;
@@ -119,7 +133,14 @@ export class Renderer {
 
   drawNode(node, isSelected, isConnectingFrom) {
     const ctx = this.ctx;
-    const { x, y, width, height, color, label } = node;
+    const { x, y, width, height, label } = node;
+    let color = node.color;
+
+    // Визуальная индикация при перегрузке PostgreSQL
+    if (node.type === 'PostgreSQL' && node.activeConnections >= node.maxConnections) {
+      color = '#3a1a1a'; // красноватый оттенок
+    }
+
     const rx = 8, ry = 8;
 
     // Тень
@@ -157,53 +178,100 @@ export class Renderer {
     ctx.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, x, y);
+    ctx.fillText(label, x, y - 4);
+
+    // Subtitle: статус узла
+    const subtitle = this._getNodeSubtitle(node);
+    if (subtitle) {
+      ctx.fillStyle = '#888';
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText(subtitle, x, y + 12);
+    }
   }
 
-  /** Нарисовать все частицы — сгруппированы по цвету для минимизации смены состояния */
+  /** Нарисовать все частицы */
   drawParticles(particles, time) {
     const ctx = this.ctx;
     if (particles.length === 0) return;
 
-    // Group particles by (color, shadowBlur) to batch draw calls
-    const groups = new Map();
     for (const p of particles) {
-      const pulse = Math.sin(time * 0.005 + p.id * 0.7) * 0.3 + 0.7;
-      let r, color;
-      if (p.state === 'success') {
-        r = 7 * (1 + Math.sin(time * 0.01 + p.id) * 0.3);
-        color = '#66bb6a';
-      } else if (p.state === 'error') {
-        r = 7 * (1 + Math.sin(time * 0.01 + p.id) * 0.3);
-        color = '#ef5350';
-      } else if (p.type === 'sql') {
-        r = 5 * pulse;
-        color = '#64b5f6';
-      } else {
-        r = 5 * pulse;
-        color = '#ffd54f';
+      // Терминальные состояния — рисуем вспышку-кольцо
+      if (p.state === 'success' || p.state === 'error') {
+        if (p.stateChangedAt != null) {
+          const elapsed = time - p.stateChangedAt;
+          const flashProgress = Math.min(elapsed / 400, 1);
+          const ringR = 5 + flashProgress * 15;
+          const alpha = 1 - flashProgress;
+          ctx.strokeStyle = p.state === 'success'
+            ? `rgba(102, 187, 106, ${alpha})`
+            : `rgba(239, 83, 80, ${alpha})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        continue;
       }
-      const blur = (p.state === 'success' || p.state === 'error') ? 14 : 8;
-      const key = `${color}|${blur}`;
-      let group = groups.get(key);
-      if (!group) {
-        group = { color, blur, items: [] };
-        groups.set(key, group);
-      }
-      group.items.push({ x: p.x, y: p.y, r });
-    }
 
-    for (const group of groups.values()) {
-      ctx.fillStyle = group.color;
-      ctx.shadowColor = group.color;
-      ctx.shadowBlur = group.blur;
-      ctx.beginPath();
-      for (const { x, y, r } of group.items) {
-        ctx.moveTo(x + r, y);
-        ctx.arc(x, y, r, 0, Math.PI * 2);
+      // Родитель ждёт на Backend — жёлтая пульсация
+      if (p.state === 'pending') {
+        const pulse = Math.sin(time * 0.006 + p.id * 0.7) * 0.4 + 0.6;
+        const r = 7 * pulse;
+        ctx.fillStyle = '#ffd54f';
+        ctx.shadowColor = '#ffd54f';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Кольцо ожидания
+        ctx.strokeStyle = 'rgba(255, 213, 79, 0.3)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+        ctx.stroke();
+        continue;
       }
+
+      // В процессинге на PostgreSQL — синяя пульсация + прогресс-кольцо
+      if (p.state === 'processing') {
+        const pulse = Math.sin(time * 0.006 + p.id * 0.7) * 0.3 + 0.7;
+        const r = 5 * pulse;
+        ctx.fillStyle = '#64b5f6';
+        ctx.shadowColor = '#64b5f6';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Прогресс-кольцо
+        if (p.processingStartedAt != null) {
+          const pt = p._totalProcessingTime || p.baseProcessingTime || 500;
+          const elapsed = time - p.processingStartedAt;
+          const progress = Math.min(elapsed / pt, 1);
+          ctx.strokeStyle = 'rgba(100, 181, 246, 0.6)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 9, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        continue;
+      }
+
+      // travelling: в пути
+      const pulse = Math.sin(time * 0.005 + p.id * 0.7) * 0.3 + 0.7;
+      const r = 5 * pulse;
+      const color = p.type === 'sql' ? '#64b5f6' : '#ffd54f';
+
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fill();
+      ctx.shadowBlur = 0;
     }
-    ctx.shadowBlur = 0;
   }
 }

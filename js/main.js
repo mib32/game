@@ -267,9 +267,9 @@ function updateStats() {
   content.innerHTML = `
     <div class="stat-row"><span class="stat-label">API requests</span><span class="stat-value total">${s.totalApiRequests}</span></div>
     <div class="stat-row"><span class="stat-label">DB queries</span><span class="stat-value total">${s.totalDbRequests}</span></div>
+    <div class="stat-row"><span class="stat-label">→ Success</span><span class="stat-value success">${s.success}</span></div>
+    <div class="stat-row"><span class="stat-label">→ Failed</span><span class="stat-value fail">${s.fail}</span></div>
     <div class="stat-row"><span class="stat-label">In flight</span><span class="stat-value">${sim.particles.length}</span></div>
-    <div class="stat-row"><span class="stat-label">Success</span><span class="stat-value success">${s.success}</span></div>
-    <div class="stat-row"><span class="stat-label">Failed</span><span class="stat-value fail">${s.fail}</span></div>
   `;
 }
 
