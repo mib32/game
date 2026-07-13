@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture Load Simulator</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <h2>Nodes</h2>
+      <div id="palette"></div>
+      <div id="info">
+        <p><strong>Place:</strong> select type → click canvas</p>
+        <p><strong>Connect:</strong> click node A → click node B</p>
+        <p><strong>Move:</strong> drag node</p>
+        <p><strong>Delete:</strong> select node → Delete key</p>
+        <p><strong>Cancel:</strong> Esc</p>
+      </div>
+      <div id="stats" style="display:none">
+        <h3>Statistics</h3>
+        <div id="stats-content"></div>
+      </div>
+    </div>
+    <div id="canvas-container">
+      <canvas id="sim-canvas"></canvas>
+    </div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
