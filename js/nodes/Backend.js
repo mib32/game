@@ -1,5 +1,5 @@
 import { Node } from '../core/Node.js';
-import { Particle } from '../core/Particle.js';
+import { Particle, PARTICLE_SPEED } from '../core/Particle.js';
 
 /**
  * Backend — конвертор: 1 API-запрос → N SQL-запросов.
@@ -50,7 +50,7 @@ export class Backend extends Node {
       for (const outPort of this.outputs) {
         for (const conn of outPort.connections) {
           sim.stats.totalDbRequests++;
-          children.push(new Particle('sql', conn, 0.35, baseTime));
+          children.push(new Particle('sql', conn, PARTICLE_SPEED, baseTime));
         }
       }
     }

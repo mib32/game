@@ -101,7 +101,6 @@ export class Renderer {
   _getNodeSubtitle(node) {
     if (node.type === 'PostgreSQL') {
       const conn = node.activeConnections;
-      console.log(node.maxConnections);
       const max = node.maxConnections;
       const db = node.dbSize;
       return `${conn}/${max} conn · DB: ${db}`;

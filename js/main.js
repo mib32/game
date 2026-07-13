@@ -290,9 +290,16 @@ if (generateBtn) {
 buildPalette();
 
 // Размещаем демо-узлы для наглядности
-sim.createNode('TrafficSource', 150, 200);
-sim.createNode('Backend', 400, 200);
-sim.createNode('PostgreSQL', 650, 200);
+const ts = sim.createNode('TrafficSource', 150, 200);
+const be = sim.createNode('Backend', 400, 200);
+const pg = sim.createNode('PostgreSQL', 650, 200);
+
+// ?test — предварительно соединяем все три узла
+if (window.location.search.includes('test')) {
+  sim.createConnection(ts, be);
+  sim.createConnection(be, pg);
+  requestRender();
+}
 
 requestAnimationFrame(frame);
 
