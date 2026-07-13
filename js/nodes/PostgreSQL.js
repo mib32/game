@@ -39,4 +39,15 @@ export class PostgreSQL extends Node {
     // Рестарт: все активные запросы падают
     this.activeRequests = 0;
   }
+
+  /**
+   * Принять SQL-запрос.
+   * Stage 2: просто поглощаем и считаем success.
+   * Stage 3: добавится capacity + processing time.
+   */
+  receive(particle, sim) {
+    particle.state = 'success';
+    sim.stats.success++;
+    return null;
+  }
 }

@@ -146,12 +146,14 @@ export class Renderer {
     ctx.fillText(label, x, y);
   }
 
-  /** Нарисовать все частицы (в Stage 2+) */
+  /** Нарисовать все частицы */
   drawParticles(particles, time) {
     const ctx = this.ctx;
     for (const p of particles) {
-      const pulse = Math.sin(time * 0.005 + (p.id || 0)) * 0.3 + 0.7;
-      const r = 5 * pulse;
+      const pulse = Math.sin(time * 0.005 + p.id * 0.7) * 0.3 + 0.7;
+      const r = p.state === 'success' || p.state === 'error'
+        ? 7 * (1 + Math.sin(time * 0.01 + p.id) * 0.3) // вспышка поярче
+        : 5 * pulse;
 
       let color;
       if (p.state === 'success') color = '#66bb6a';
@@ -161,7 +163,7 @@ export class Renderer {
 
       ctx.fillStyle = color;
       ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = p.state === 'success' || p.state === 'error' ? 14 : 8;
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fill();

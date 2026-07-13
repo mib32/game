@@ -47,8 +47,13 @@ export class Node {
            py >= b.y && py <= b.y + b.height;
   }
 
-  /** Вызвается когда приходит запрос. Переопределяется в подклассах. */
-  receive(particle, portIndex) {
-    // Базовая реализация — ничего не делает
+  /** Вызвается когда приходит запрос. Переопределяется в подклассах.
+   * @param {import('./Particle.js').Particle} particle
+   * @param {import('../simulation.js').Simulation} sim
+   * @returns {{ particles: Particle[] } | null}
+   */
+  receive(particle, sim) {
+    // Базовая реализация — просто поглощает
+    return null;
   }
 }

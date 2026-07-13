@@ -1,4 +1,5 @@
 import { Node } from '../core/Node.js';
+import { Particle } from '../core/Particle.js';
 
 /**
  * TrafficSource — генерирует API-запросы.
@@ -12,7 +13,17 @@ export class TrafficSource extends Node {
       inputs: [],
       outputs: [{ type: 'api' }],
     });
-    this.rate = 1; // запросов в секунду
+    this.rate = 1; // запросов в секунду (для Stage 4)
     this.timer = 0;
+  }
+
+  /** Сгенерировать один API-запрос на все выходные связи */
+  generateRequest(sim) {
+    for (const outPort of this.outputs) {
+      for (const conn of outPort.connections) {
+        sim.stats.totalApiRequests++;
+        sim.spawnParticle(new Particle('api', conn));
+      }
+    }
   }
 }

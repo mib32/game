@@ -77,6 +77,30 @@ body {
   color: #64b5f6;
 }
 
+#btn-generate {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  border: none;
+  background: #e94560;
+  color: #fff;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+#btn-generate:hover {
+  background: #ff6b81;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(233, 69, 96, 0.4);
+}
+
+#btn-generate:active {
+  transform: scale(0.97);
+}
+
 #info {
   font-size: 11px;
   color: #888;

@@ -2,6 +2,7 @@ import { TrafficSource } from './nodes/TrafficSource.js';
 import { Backend } from './nodes/Backend.js';
 import { PostgreSQL } from './nodes/PostgreSQL.js';
 import { Connection } from './core/Connection.js';
+import { Particle } from './core/Particle.js';
 
 /**
  * Simulation — управляет графом узлов и связей.
@@ -91,6 +92,8 @@ export class Simulation {
 
   /** Разорвать связь */
   removeConnection(conn) {
+    // Удаляем частицы на этой связи
+    this.particles = this.particles.filter(p => p.connection !== conn);
     conn.destroy();
     this.connections = this.connections.filter(c => c !== conn);
   }
@@ -102,8 +105,77 @@ export class Simulation {
     );
   }
 
-  /** Обновление симуляции (в Stage 2+) */
-  update(dt) {
-    // Будет в Stage 2
+  /** Создать частицу и добавить в симуляцию */
+  spawnParticle(particle) {
+    this.particles.push(particle);
+    particle.connection.particles.push(particle);
+  }
+
+  /** Обновление симуляции: движение частиц, прибытие, очистка */
+  update(dt, simTime) {
+    const dtSec = dt / 1000;
+    const arrived = [];
+
+    for (const p of this.particles) {
+      if (p.state === 'traveling') {
+        p.progress += p.speed * dtSec;
+
+        // Обновляем позицию вдоль связи
+        const from = p.connection.from.node;
+        const to = p.connection.to.node;
+        p.x = from.x + (to.x - from.x) * Math.min(p.progress, 1);
+        p.y = from.y + (to.y - from.y) * Math.min(p.progress, 1);
+
+        if (p.progress >= 1) {
+          arrived.push(p);
+        }
+      }
+    }
+
+    // Обработка прибывших частиц
+    for (const p of arrived) {
+      const targetNode = p.connection.to.node;
+      const result = targetNode.receive(p, this);
+
+      if (result && result.particles) {
+        for (const newP of result.particles) {
+          this.spawnParticle(newP);
+        }
+      }
+      // Частица остаётся в sim.particles с новым состоянием (success/error)
+      // для краткой визуальной вспышки
+    }
+
+    // Удаляем success/error частицы после короткой задержки
+    const FLASH_DURATION = 400; // ms
+    this.particles = this.particles.filter(p => {
+      if (p.state === 'success' || p.state === 'error') {
+        if (p.stateChangedAt == null) {
+          p.stateChangedAt = simTime;
+          return true;
+        }
+        if (simTime - p.stateChangedAt > FLASH_DURATION) {
+          p.connection.particles = p.connection.particles.filter(x => x !== p);
+          return false;
+        }
+        return true;
+      }
+      return true;
+    });
+  }
+
+  /** Удалить частицу из симуляции */
+  _removeParticle(p) {
+    this.particles = this.particles.filter(x => x !== p);
+    p.connection.particles = p.connection.particles.filter(x => x !== p);
+  }
+
+  /** Сгенерировать один запрос из каждого TrafficSource */
+  generateFromSources() {
+    for (const node of this.nodes) {
+      if (node instanceof TrafficSource) {
+        node.generateRequest(this);
+      }
+    }
   }
 }

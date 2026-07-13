@@ -14,6 +14,8 @@ let dragTarget = null;            // перетаскиваемый узел
 let dragState = null;             // { node, startX, startY, offsetX, offsetY } — потенциальный drag
 let mouse = { x: 0, y: 0 };
 const DRAG_THRESHOLD = 4;
+let needsRender = true;           // флаг: нужен ли перерендер в этом кадре
+let simTime = 0;                  // время симуляции (ms) — для анимации частиц
 
 // --- Палитра ---
 function buildPalette() {
@@ -38,7 +40,7 @@ function buildPalette() {
       paletteSelected = type;
       connectingFrom = null;
       selectedNode = null;
-      render();
+      requestRender();
     });
 
     palette.appendChild(el);
@@ -72,7 +74,7 @@ canvas.addEventListener('mousedown', (e) => {
     sim.createNode(paletteSelected, pos.x, pos.y);
     paletteSelected = null;
     document.querySelectorAll('.palette-item').forEach(e => e.classList.remove('selected'));
-    render();
+    requestRender();
     return;
   }
 
@@ -89,7 +91,7 @@ canvas.addEventListener('mousedown', (e) => {
     connectingFrom = null;
     selectedNode = null;
     dragState = null;
-    render();
+    requestRender();
   }
 });
 
@@ -120,10 +122,14 @@ canvas.addEventListener('mousemove', (e) => {
     if (dragTarget) {
       dragTarget.x = pos.x - dragState.offsetX;
       dragTarget.y = pos.y - dragState.offsetY;
+      requestRender();
     }
   }
 
-  render();
+  // Запрашиваем рендер только если есть draft-линия для отрисовки
+  if (connectingFrom && !dragTarget) {
+    requestRender();
+  }
 });
 
 canvas.addEventListener('mouseup', (e) => {
@@ -161,7 +167,7 @@ canvas.addEventListener('mouseup', (e) => {
     document.querySelectorAll('.palette-item').forEach(e => e.classList.remove('selected'));
   }
 
-  render();
+  requestRender();
 });
 
 canvas.addEventListener('contextmenu', (e) => {
@@ -172,7 +178,7 @@ canvas.addEventListener('contextmenu', (e) => {
     sim.removeNode(hitNode);
     if (selectedNode === hitNode) selectedNode = null;
     if (connectingFrom === hitNode) connectingFrom = null;
-    render();
+    requestRender();
   }
 });
 
@@ -183,7 +189,7 @@ document.addEventListener('keydown', (e) => {
       sim.removeNode(selectedNode);
       selectedNode = null;
       connectingFrom = null;
-      render();
+      requestRender();
     }
   }
   if (e.key === 'Escape') {
@@ -191,17 +197,21 @@ document.addEventListener('keydown', (e) => {
     selectedNode = null;
     paletteSelected = null;
     document.querySelectorAll('.palette-item').forEach(el => el.classList.remove('selected'));
-    render();
+    requestRender();
   }
 });
 
 // --- Ресайз ---
 window.addEventListener('resize', () => {
   renderer.resize();
-  render();
+  needsRender = true;
 });
 
 // --- Главный цикл рендеринга ---
+function requestRender() {
+  needsRender = true;
+}
+
 function render() {
   renderer.clear();
   renderer.drawConnections(sim.connections);
@@ -212,9 +222,59 @@ function render() {
   }
 
   renderer.drawNodes(sim.nodes, selectedNode, connectingFrom);
+  renderer.drawParticles(sim.particles, simTime);
+
+  // Обновляем статистику
+  updateStats();
 }
 
-// --- Старт ---
+let lastFrameTime = performance.now();
+function frame(now) {
+  const dt = now - lastFrameTime;
+  lastFrameTime = now;
+  simTime += dt;
+
+  // Обновление симуляции
+  sim.update(Math.min(dt, 100), simTime); // cap dt at 100ms to avoid spiral
+
+  // Всегда рендерим, потому что частицы анимируются
+  render();
+  requestAnimationFrame(frame);
+}
+
+// --- Статистика ---
+function updateStats() {
+  const el = document.getElementById('stats');
+  const content = document.getElementById('stats-content');
+  if (!el || !content) return;
+
+  const s = sim.stats;
+  const hasActivity = s.totalApiRequests > 0 || s.totalDbRequests > 0 || sim.particles.length > 0;
+  el.style.display = hasActivity ? 'block' : 'none';
+
+  content.innerHTML = `
+    <div class="stat-row"><span class="stat-label">API requests</span><span class="stat-value total">${s.totalApiRequests}</span></div>
+    <div class="stat-row"><span class="stat-label">DB queries</span><span class="stat-value total">${s.totalDbRequests}</span></div>
+    <div class="stat-row"><span class="stat-label">In flight</span><span class="stat-value">${sim.particles.length}</span></div>
+    <div class="stat-row"><span class="stat-label">Success</span><span class="stat-value success">${s.success}</span></div>
+    <div class="stat-row"><span class="stat-label">Failed</span><span class="stat-value fail">${s.fail}</span></div>
+  `;
+}
+
+// --- Кнопка Generate ---
+const generateBtn = document.getElementById('btn-generate');
+if (generateBtn) {
+  generateBtn.addEventListener('click', () => {
+    // Проверяем, есть ли соединённые цепочки
+    if (sim.connections.length === 0) {
+      // Показываем подсказку
+      generateBtn.textContent = 'Connect nodes first!';
+      setTimeout(() => { generateBtn.textContent = '⚡ Generate Request'; }, 1500);
+      return;
+    }
+    sim.generateFromSources();
+  });
+}
 buildPalette();
 
 // Размещаем демо-узлы для наглядности
@@ -222,7 +282,7 @@ sim.createNode('TrafficSource', 150, 200);
 sim.createNode('Backend', 400, 200);
 sim.createNode('PostgreSQL', 650, 200);
 
-render();
+requestAnimationFrame(frame);
 
 // Экспорт для доступа из консоли (удобно для отладки)
 window.sim = sim;
