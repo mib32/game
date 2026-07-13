@@ -28,5 +28,8 @@ export class Particle {
     const from = connection.from.node;
     this.x = from.x;
     this.y = from.y;
+
+    // Random perpendicular spread so particles on the same connection don't overlap
+    this.spreadOffset = (Math.random() - 0.5) * 14; // px offset perpendicular to the line
   }
 }

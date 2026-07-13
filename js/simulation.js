@@ -129,8 +129,19 @@ export class Simulation {
 
       const from = p.connection.from.node;
       const to = p.connection.to.node;
-      p.x = from.x + (to.x - from.x) * Math.min(p.progress, 1);
-      p.y = from.y + (to.y - from.y) * Math.min(p.progress, 1);
+      const t = Math.min(p.progress, 1);
+
+      // Base position along the connection line
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+
+      // Perpendicular unit vector for axial spread
+      const perpX = -dy / len;
+      const perpY = dx / len;
+
+      p.x = from.x + dx * t + perpX * p.spreadOffset;
+      p.y = from.y + dy * t + perpY * p.spreadOffset + Math.sin(simTime * 0.004 + p.id * 0.5) * 3;
 
       if (p.progress >= 1) {
         arrived.push(p);
@@ -158,6 +169,16 @@ export class Simulation {
       if (node instanceof PostgreSQL) {
         node.tick(simTime, this);
       }
+    }
+
+    // 3.5 Разносим parked-частицы по окружности вокруг их target-узла
+    for (const p of this.particles) {
+      if (p.state === 'traveling') continue;
+      const node = p.connection.to.node;
+      const angle = (p.id * 2.399963) % (Math.PI * 2); // golden-angle spread
+      const radius = 15;
+      p.x = node.x + Math.cos(angle) * radius;
+      p.y = node.y + Math.sin(angle) * radius + Math.sin(simTime * 0.004 + p.id * 0.5) * 3;
     }
 
     // 4. Очистка terminal-частиц после вспышки

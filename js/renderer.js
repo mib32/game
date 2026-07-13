@@ -101,6 +101,7 @@ export class Renderer {
   _getNodeSubtitle(node) {
     if (node.type === 'PostgreSQL') {
       const conn = node.activeConnections;
+      console.log(node.maxConnections);
       const max = node.maxConnections;
       const db = node.dbSize;
       return `${conn}/${max} conn · DB: ${db}`;
@@ -261,7 +262,7 @@ export class Renderer {
       }
 
       // travelling: в пути
-      const pulse = Math.sin(time * 0.005 + p.id * 0.7) * 0.3 + 0.7;
+      const pulse = Math.sin(time * 0.005 + p.id * 0.7) * 0.1 + 0.9;
       const r = 5 * pulse;
       const color = p.type === 'sql' ? '#64b5f6' : '#ffd54f';
 

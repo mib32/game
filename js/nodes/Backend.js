@@ -37,13 +37,15 @@ export class Backend extends Node {
     particle.y = this.y;
     particle.processingStartedAt = sim._simTime; // для таймаута (Stage 4)
 
-    const N = Math.floor(Math.random() * 5) + 1; // 1..5
+    // const N = Math.floor(Math.random() * 5) + 1; // 1..5
+    const N = 1;
     const children = [];
 
     for (let i = 0; i < N; i++) {
       // Случайный baseProcessingTime для каждого дочернего запроса
-      const baseTime = this.minProcessingTime +
+      let baseTime = this.minProcessingTime +
         Math.random() * (this.maxProcessingTime - this.minProcessingTime);
+      baseTime = baseTime * 10;
 
       for (const outPort of this.outputs) {
         for (const conn of outPort.connections) {

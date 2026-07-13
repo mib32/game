@@ -23,7 +23,7 @@ export class PostgreSQL extends Node {
   }
 
   static tierConfig = {
-    XS:  { maxConn: 5,   cpu: 5 },
+    XS:  { maxConn: 1,   cpu: 5 },
     S:   { maxConn: 20,  cpu: 20 },
     M:   { maxConn: 60,  cpu: 60 },
     L:   { maxConn: 120, cpu: 120 },
