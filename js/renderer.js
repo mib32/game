@@ -7,6 +7,8 @@ export class Renderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.dpr = window.devicePixelRatio || 1;
+    /** @type {CanvasImageSource | null} */
+    this._gridCache = null;
     this.resize();
   }
 
@@ -17,30 +19,42 @@ export class Renderer {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.width = rect.width;
     this.height = rect.height;
+    // Invalidate grid cache on resize
+    this._gridCache = null;
   }
 
   clear() {
-    this.ctx.clearRect(0, 0, this.width, this.height);
-    this.drawGrid();
+    const ctx = this.ctx;
+    // Draw cached grid instead of redrawing every frame
+    if (!this._gridCache) {
+      this._buildGridCache();
+    }
+    ctx.clearRect(0, 0, this.width, this.height);
+    ctx.drawImage(this._gridCache, 0, 0);
   }
 
-  drawGrid() {
-    const ctx = this.ctx;
+  /** Build grid into an offscreen canvas once and cache it */
+  _buildGridCache() {
+    const off = document.createElement('canvas');
+    off.width = this.width * this.dpr;
+    off.height = this.height * this.dpr;
+    const ctx = off.getContext('2d');
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
     const step = 40;
     ctx.strokeStyle = 'rgba(255,255,255,0.03)';
     ctx.lineWidth = 1;
+    ctx.beginPath();
     for (let x = step; x < this.width; x += step) {
-      ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, this.height);
-      ctx.stroke();
     }
     for (let y = step; y < this.height; y += step) {
-      ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(this.width, y);
-      ctx.stroke();
     }
+    ctx.stroke();
+    this._gridCache = off;
   }
 
   /** Нарисовать все связи */
@@ -146,28 +160,50 @@ export class Renderer {
     ctx.fillText(label, x, y);
   }
 
-  /** Нарисовать все частицы */
+  /** Нарисовать все частицы — сгруппированы по цвету для минимизации смены состояния */
   drawParticles(particles, time) {
     const ctx = this.ctx;
+    if (particles.length === 0) return;
+
+    // Group particles by (color, shadowBlur) to batch draw calls
+    const groups = new Map();
     for (const p of particles) {
       const pulse = Math.sin(time * 0.005 + p.id * 0.7) * 0.3 + 0.7;
-      const r = p.state === 'success' || p.state === 'error'
-        ? 7 * (1 + Math.sin(time * 0.01 + p.id) * 0.3) // вспышка поярче
-        : 5 * pulse;
-
-      let color;
-      if (p.state === 'success') color = '#66bb6a';
-      else if (p.state === 'error') color = '#ef5350';
-      else if (p.type === 'sql') color = '#64b5f6';
-      else color = '#ffd54f'; // api
-
-      ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = p.state === 'success' || p.state === 'error' ? 14 : 8;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      let r, color;
+      if (p.state === 'success') {
+        r = 7 * (1 + Math.sin(time * 0.01 + p.id) * 0.3);
+        color = '#66bb6a';
+      } else if (p.state === 'error') {
+        r = 7 * (1 + Math.sin(time * 0.01 + p.id) * 0.3);
+        color = '#ef5350';
+      } else if (p.type === 'sql') {
+        r = 5 * pulse;
+        color = '#64b5f6';
+      } else {
+        r = 5 * pulse;
+        color = '#ffd54f';
+      }
+      const blur = (p.state === 'success' || p.state === 'error') ? 14 : 8;
+      const key = `${color}|${blur}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { color, blur, items: [] };
+        groups.set(key, group);
+      }
+      group.items.push({ x: p.x, y: p.y, r });
     }
+
+    for (const group of groups.values()) {
+      ctx.fillStyle = group.color;
+      ctx.shadowColor = group.color;
+      ctx.shadowBlur = group.blur;
+      ctx.beginPath();
+      for (const { x, y, r } of group.items) {
+        ctx.moveTo(x + r, y);
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
   }
 }

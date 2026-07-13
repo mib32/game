@@ -234,15 +234,21 @@ function frame(now) {
   lastFrameTime = now;
   simTime += dt;
 
-  // Обновление симуляции
-  sim.update(Math.min(dt, 100), simTime); // cap dt at 100ms to avoid spiral
+  // Update simulation (cheap — only iterates particles)
+  sim.update(Math.min(dt, 100), simTime);
 
-  // Всегда рендерим, потому что частицы анимируются
-  render();
+  // Only render when something actually changed OR particles are animating
+  const hasParticles = sim.particles.length > 0;
+  if (needsRender || hasParticles) {
+    render();
+    needsRender = false;
+  }
+
   requestAnimationFrame(frame);
 }
 
 // --- Статистика ---
+let _lastStats = null;
 function updateStats() {
   const el = document.getElementById('stats');
   const content = document.getElementById('stats-content');
@@ -250,6 +256,12 @@ function updateStats() {
 
   const s = sim.stats;
   const hasActivity = s.totalApiRequests > 0 || s.totalDbRequests > 0 || sim.particles.length > 0;
+
+  // Avoid DOM writes when nothing changed
+  const key = `${s.totalApiRequests}|${s.totalDbRequests}|${sim.particles.length}|${s.success}|${s.fail}|${hasActivity}`;
+  if (key === _lastStats) return;
+  _lastStats = key;
+
   el.style.display = hasActivity ? 'block' : 'none';
 
   content.innerHTML = `
