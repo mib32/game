@@ -101,6 +101,7 @@ export class Simulation {
 
   /** Создать частицу и добавить в симуляцию */
   spawnParticle(particle) {
+    particle.createdAt = this._simTime;
     this.particles.push(particle);
     particle.connection.particles.push(particle);
   }

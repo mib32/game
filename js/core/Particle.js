@@ -35,5 +35,8 @@ export class Particle {
 
     // Random perpendicular spread so particles on the same connection don't overlap
     this.spreadOffset = (Math.random() - 0.5) * 14; // px offset perpendicular to the line
+
+    // Set by Simulation.spawnParticle() — timestamp when the particle entered the simulation
+    this.createdAt = null;
   }
 }

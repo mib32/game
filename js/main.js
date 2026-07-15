@@ -229,6 +229,7 @@ function render() {
 }
 
 let lastFrameTime = performance.now();
+let _hadParticles = false;
 function frame(now) {
   const dt = now - lastFrameTime;
   lastFrameTime = now;
@@ -237,12 +238,14 @@ function frame(now) {
   // Update simulation (cheap — only iterates particles)
   sim.update(Math.min(dt, 100), simTime);
 
-  // Only render when something actually changed OR particles are animating
+  // Only render when something actually changed OR particles are animating.
+  // When particles just dropped to zero, do one final frame to clear ghosts.
   const hasParticles = sim.particles.length > 0;
-  if (needsRender || hasParticles) {
+  if (needsRender || hasParticles || _hadParticles) {
     render();
     needsRender = false;
   }
+  _hadParticles = hasParticles;
 
   requestAnimationFrame(frame);
 }

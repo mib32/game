@@ -273,5 +273,25 @@ export class Renderer {
       ctx.fill();
       ctx.shadowBlur = 0;
     }
+
+    // Lifespan labels (second pass — after all particles drawn)
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    for (const p of particles) {
+      if (p.createdAt == null) continue;
+      const sec = (time - p.createdAt) / 1000;
+      const label = sec < 10
+        ? sec.toFixed(2) + 's'
+        : sec.toFixed(0) + 's';
+      const w = ctx.measureText(label).width + 4;
+      const h = 11;
+      const lx = p.x - w / 2;
+      const ly = p.y - 10 - h;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(lx, ly, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText(label, p.x, p.y - 10);
+    }
   }
 }
