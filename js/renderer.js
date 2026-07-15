@@ -279,8 +279,15 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     for (const p of particles) {
-      if (p.createdAt == null) continue;
-      const sec = (time - p.createdAt) / 1000;
+      // Compute display time:
+      // - processing / success / error: own accumulated serviceMs
+      // - pending (parent): own + sum of children's current serviceMs (excludes wire)
+      let displayMs = p.serviceMs;
+      if (p.state === 'pending' && p._children) {
+        displayMs += p._children.reduce((s, c) => s + c.serviceMs, 0);
+      }
+      if (displayMs <= 0) continue;
+      const sec = displayMs / 1000;
       const label = sec < 10
         ? sec.toFixed(2) + 's'
         : sec.toFixed(0) + 's';

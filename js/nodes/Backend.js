@@ -78,6 +78,8 @@ export class Backend extends Node {
 
     if (parentParticle._completedChildren >= parentParticle._children.length) {
       this.pendingParents--;
+      // Parent's service time += sum of children's node-time (preserves own processing)
+      parentParticle.serviceMs += parentParticle._children.reduce((s, c) => s + c.serviceMs, 0);
       if (parentParticle._anyChildFailed) {
         parentParticle.state = 'error';
         sim.stats.inc('requests_outcome', { type: 'api', status: 'error' });

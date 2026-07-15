@@ -168,6 +168,14 @@ export class Simulation {
       }
     }
 
+    // 3.5 Накопление serviceMs: только для processing-частиц (дети на PostgreSQL)
+    //     pending-родители не тикают — их время = сумма детей при завершении
+    for (const p of this.particles) {
+      if (p.state === 'processing') {
+        p.serviceMs += dt;
+      }
+    }
+
     // 3.5 Разносим parked-частицы по окружности вокруг их target-узла
     for (const p of this.particles) {
       if (p.state === 'traveling') continue;

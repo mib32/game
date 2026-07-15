@@ -38,5 +38,9 @@ export class Particle {
 
     // Set by Simulation.spawnParticle() — timestamp when the particle entered the simulation
     this.createdAt = null;
+
+    // Accumulated service time (ms) — only ticks during processing/parked states.
+    // Wire fly-time is excluded. Children propagate their total to the parent on completion.
+    this.serviceMs = 0;
   }
 }
