@@ -12,13 +12,20 @@
       <canvas id="sim-canvas"></canvas>
     </div>
     <div id="toolbar">
-      <!-- Column 1: Palette -->
+      <!-- Column 1: Palette + Help -->
       <div class="toolbar-col">
         <div class="toolbar-section">
           <h3>Nodes</h3>
           <div id="palette"></div>
         </div>
         <button id="btn-generate">⚡ Generate Request</button>
+        <div class="toolbar-help">
+          <p><strong>Place:</strong> select type → click canvas</p>
+          <p><strong>Connect:</strong> click A → click B</p>
+          <p><strong>Move:</strong> drag node</p>
+          <p><strong>Delete:</strong> select → Del</p>
+          <p><strong>Cancel:</strong> Esc</p>
+        </div>
       </div>
 
       <!-- Column 2: Backend settings -->
@@ -55,15 +62,6 @@
           <h3>Statistics</h3>
           <div id="stats-content"></div>
         </div>
-      </div>
-
-      <!-- Column 4: Help -->
-      <div class="toolbar-col toolbar-help">
-        <p><strong>Place:</strong> select type → click canvas</p>
-        <p><strong>Connect:</strong> click A → click B</p>
-        <p><strong>Move:</strong> drag node</p>
-        <p><strong>Delete:</strong> select → Del</p>
-        <p><strong>Cancel:</strong> Esc</p>
       </div>
     </div>
   </div>

@@ -351,19 +351,68 @@ bindSelect('ctl-onTimeout', 'onTimeout');
 
 // DB requests range
 const dbNVal = document.getElementById('val-db-n');
+const ctlDbMin = document.getElementById('ctl-db-min');
+const ctlDbMax = document.getElementById('ctl-db-max');
+
+function clampRange(minEl, maxEl, setKey) {
+  let vMin = Number(minEl.value);
+  let vMax = Number(maxEl.value);
+  if (vMin > vMax) {
+    // The one being dragged wins — the other snaps to match
+    if (setKey === 'dbRequestsMin' || setKey === 'processingMin') vMax = vMin;
+    else vMin = vMax;
+    minEl.value = vMin;
+    maxEl.value = vMax;
+  }
+  return [vMin, vMax];
+}
+
 function updateDbNLabel() {
   dbNVal.textContent = settings.dbRequestsMin + ' \u2013 ' + settings.dbRequestsMax;
 }
-bindSlider('ctl-db-min', 'dbRequestsMin', null, updateDbNLabel);
-bindSlider('ctl-db-max', 'dbRequestsMax', null, updateDbNLabel);
+
+ctlDbMin.addEventListener('input', () => {
+  const [vMin, vMax] = clampRange(ctlDbMin, ctlDbMax, 'dbRequestsMin');
+  settings.dbRequestsMin = vMin;
+  settings.dbRequestsMax = vMax;
+  saveSettings(settings);
+  applySettingsToNodes();
+  updateDbNLabel();
+});
+ctlDbMax.addEventListener('input', () => {
+  const [vMin, vMax] = clampRange(ctlDbMin, ctlDbMax, 'dbRequestsMax');
+  settings.dbRequestsMin = vMin;
+  settings.dbRequestsMax = vMax;
+  saveSettings(settings);
+  applySettingsToNodes();
+  updateDbNLabel();
+});
 
 // Processing time range
 const dbTimeVal = document.getElementById('val-db-time');
+const ctlTimeMin = document.getElementById('ctl-time-min');
+const ctlTimeMax = document.getElementById('ctl-time-max');
+
 function updateDbTimeLabel() {
   dbTimeVal.textContent = settings.processingMin + ' \u2013 ' + settings.processingMax + 'ms';
 }
-bindSlider('ctl-time-min', 'processingMin', null, updateDbTimeLabel);
-bindSlider('ctl-time-max', 'processingMax', null, updateDbTimeLabel);
+
+ctlTimeMin.addEventListener('input', () => {
+  const [vMin, vMax] = clampRange(ctlTimeMin, ctlTimeMax, 'processingMin');
+  settings.processingMin = vMin;
+  settings.processingMax = vMax;
+  saveSettings(settings);
+  applySettingsToNodes();
+  updateDbTimeLabel();
+});
+ctlTimeMax.addEventListener('input', () => {
+  const [vMin, vMax] = clampRange(ctlTimeMin, ctlTimeMax, 'processingMax');
+  settings.processingMin = vMin;
+  settings.processingMax = vMax;
+  saveSettings(settings);
+  applySettingsToNodes();
+  updateDbTimeLabel();
+});
 
 // Initialise labels
 timeoutVal.textContent = settings.timeoutMs + 'ms';
