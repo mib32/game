@@ -193,6 +193,24 @@ select {
   outline: none;
 }
 
+.ctl-check {
+  font-size: 12px;
+  color: #bbb;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  margin-top: 2px;
+  user-select: none;
+}
+
+.ctl-check input[type="checkbox"] {
+  accent-color: #e94560;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
 /* ── Stats ───────────────────────────────────────────── */
 
 #stats {

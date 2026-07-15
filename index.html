@@ -42,6 +42,11 @@
             <option value="detach">Let children finish</option>
           </select>
 
+          <label class="ctl-check">
+            <input type="checkbox" id="ctl-sequential" checked>
+            Send DB requests one by one
+          </label>
+
           <label class="ctl-label">DB requests <span id="val-db-n">1 – 5</span></label>
           <div class="range-pair">
             <input type="range" id="ctl-db-min" min="1" max="20" step="1" value="1">

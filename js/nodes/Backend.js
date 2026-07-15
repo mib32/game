@@ -10,12 +10,13 @@ export class Backend extends Node {
    * @param {number} x
    * @param {number} y
    * @param {object} [opts]
-   * @param {number} [opts.timeoutMs]      - таймаут API-запроса (ms), 0 = без таймаута
+   * @param {number} [opts.timeoutMs]
    * @param {string} [opts.onTimeout]      - 'abort' | 'detach'
-   * @param {number} [opts.dbRequestsMin]  - мин. число SQL-запросов
-   * @param {number} [opts.dbRequestsMax]  - макс. число SQL-запросов
-   * @param {number} [opts.processingMin]  - мин. baseProcessingTime (ms)
-   * @param {number} [opts.processingMax]  - макс. baseProcessingTime (ms)
+   * @param {boolean} [opts.sequential]     - send DB requests one-by-one (default true)
+   * @param {number} [opts.dbRequestsMin]
+   * @param {number} [opts.dbRequestsMax]
+   * @param {number} [opts.processingMin]
+   * @param {number} [opts.processingMax]
    */
   constructor(x, y, opts = {}) {
     super('Backend', x, y, {
@@ -33,6 +34,7 @@ export class Backend extends Node {
     // Настройки (с дефолтами)
     this.timeoutMs        = opts.timeoutMs ?? 5000;
     this.onTimeout        = opts.onTimeout ?? 'abort';
+    this.sequential       = opts.sequential ?? true;
     this.dbRequestsMin    = opts.dbRequestsMin ?? 1;
     this.dbRequestsMax    = opts.dbRequestsMax ?? 5;
     this.minProcessingTime = opts.processingMin ?? 300;
@@ -43,6 +45,7 @@ export class Backend extends Node {
   applySettings(opts) {
     if (opts.timeoutMs !== undefined)        this.timeoutMs = opts.timeoutMs;
     if (opts.onTimeout !== undefined)        this.onTimeout = opts.onTimeout;
+    if (opts.sequential !== undefined)       this.sequential = opts.sequential;
     if (opts.dbRequestsMin !== undefined)    this.dbRequestsMin = opts.dbRequestsMin;
     if (opts.dbRequestsMax !== undefined)    this.dbRequestsMax = opts.dbRequestsMax;
     if (opts.processingMin !== undefined)    this.minProcessingTime = opts.processingMin;
@@ -50,7 +53,9 @@ export class Backend extends Node {
   }
 
   /**
-   * Принять API-запрос, размножить в N SQL-запросов.
+   * Принять API-запрос.
+   * Параллельный режим: сразу spawn N детей.
+   * Последовательный режим: spawn первого, остальные — по завершению.
    */
   receive(particle, sim) {
     particle.state = 'pending';
@@ -58,32 +63,46 @@ export class Backend extends Node {
     particle.y = this.y;
     particle.processingStartedAt = sim._simTime;
 
-    const N = this.dbRequestsMin === this.dbRequestsMax
+    const total = this.dbRequestsMin === this.dbRequestsMax
       ? this.dbRequestsMin
       : Math.floor(Math.random() * (this.dbRequestsMax - this.dbRequestsMin + 1)) + this.dbRequestsMin;
 
-    const children = [];
-    for (let i = 0; i < N; i++) {
-      const baseTime = this.minProcessingTime +
-        Math.random() * (this.maxProcessingTime - this.minProcessingTime);
+    this.pendingParents++;
+    this._pending.add(particle);
+    particle._children = [];
+    particle._parentNode = this;
+    particle._childrenServiceMs = 0;
+    particle._totalExpected = total;
 
-      for (const outPort of this.outputs) {
-        for (const conn of outPort.connections) {
-          sim.stats.inc('requests_total', { type: 'sql' });
-          const child = new Particle('sql', conn, PARTICLE_SPEED, baseTime);
-          child._parentParticle = particle;  // прямой обратный указатель
-          children.push(child);
-        }
+    if (this.sequential) {
+      // Отправить первого, остальные — по мере завершения
+      this._spawnOneChild(particle, sim);
+    } else {
+      // Параллельно: все сразу
+      for (let i = 0; i < total; i++) {
+        this._spawnOneChild(particle, sim);
       }
     }
 
-    this.pendingParents++;
-    this._pending.add(particle);
-    particle._children = children;
-    particle._parentNode = this;
-    particle._childrenServiceMs = 0;  // кеш для tick
+    return { particles: particle._children };
+  }
 
-    return { particles: children };
+  /** Создать и отправить одного SQL-ребёнка */
+  _spawnOneChild(parentParticle, sim) {
+    const baseTime = this.minProcessingTime +
+      Math.random() * (this.maxProcessingTime - this.minProcessingTime);
+
+    const spawned = [];
+    for (const outPort of this.outputs) {
+      for (const conn of outPort.connections) {
+        sim.stats.inc('requests_total', { type: 'sql' });
+        const child = new Particle('sql', conn, PARTICLE_SPEED, baseTime);
+        child._parentParticle = parentParticle;
+        spawned.push(child);
+      }
+    }
+    parentParticle._children.push(...spawned);
+    return spawned;
   }
 
   /**
@@ -129,30 +148,55 @@ export class Backend extends Node {
     if (!parentParticle._children) return;
     if (parentParticle.state !== 'pending') return;
 
+    // В последовательном режиме: ошибка ребёнка = немедленный фейл родителя
+    if (this.sequential && !childSuccess) {
+      parentParticle._anyChildFailed = true;
+      this._finishParent(parentParticle, sim);
+      return;
+    }
+
     parentParticle._completedChildren = (parentParticle._completedChildren || 0) + 1;
     if (!childSuccess) {
       parentParticle._anyChildFailed = true;
     }
 
-    if (parentParticle._completedChildren >= parentParticle._children.length) {
-      this._pending.delete(parentParticle);
-      this.pendingParents--;
-
-      // Суммируем children serviceMs (один раз, без reduce)
-      let total = 0;
-      for (let i = 0; i < parentParticle._children.length; i++) {
-        total += parentParticle._children[i].serviceMs;
+    // Последовательный режим: отправить следующего, если ещё есть
+    if (this.sequential) {
+      if (parentParticle._children.length < parentParticle._totalExpected) {
+        const spawned = this._spawnOneChild(parentParticle, sim);
+        for (const child of spawned) sim.spawnParticle(child);
+        return;
       }
-      parentParticle.serviceMs += total;
-
-      if (parentParticle._anyChildFailed) {
-        parentParticle.state = 'error';
-        sim.stats.inc('requests_outcome', { type: 'api', status: 'error' });
-      } else {
-        parentParticle.state = 'success';
-        sim.stats.inc('requests_outcome', { type: 'api', status: 'success' });
-      }
-      parentParticle.stateChangedAt = null;
+      // Все отправлены — ждём завершения последнего
+      if (parentParticle._completedChildren < parentParticle._totalExpected) return;
+      this._finishParent(parentParticle, sim);
+      return;
     }
+
+    // Параллельный режим: все дети уже отправлены, ждём всех
+    if (parentParticle._completedChildren >= parentParticle._children.length) {
+      this._finishParent(parentParticle, sim);
+    }
+  }
+
+  _finishParent(parentParticle, sim) {
+    this._pending.delete(parentParticle);
+    this.pendingParents--;
+
+    // Суммируем children serviceMs
+    let total = 0;
+    for (let i = 0; i < parentParticle._children.length; i++) {
+      total += parentParticle._children[i].serviceMs;
+    }
+    parentParticle.serviceMs += total;
+
+    if (parentParticle._anyChildFailed) {
+      parentParticle.state = 'error';
+      sim.stats.inc('requests_outcome', { type: 'api', status: 'error' });
+    } else {
+      parentParticle.state = 'success';
+      sim.stats.inc('requests_outcome', { type: 'api', status: 'success' });
+    }
+    parentParticle.stateChangedAt = null;
   }
 }

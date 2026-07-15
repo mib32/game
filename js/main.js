@@ -13,6 +13,7 @@ const SETTINGS_KEY = 'sim-settings';
 const DEFAULT_SETTINGS = {
   timeoutMs: 5000,
   onTimeout: 'abort',
+  sequential: true,
   dbRequestsMin: 1,
   dbRequestsMax: 5,
   processingMin: 300,
@@ -355,6 +356,17 @@ bindSlider('ctl-timeout', 'timeoutMs', v => v + 'ms', () => {
 
 // On-timeout dropdown
 bindSelect('ctl-onTimeout', 'onTimeout');
+
+// Sequential checkbox
+const ctlSequential = document.getElementById('ctl-sequential');
+if (ctlSequential) {
+  ctlSequential.checked = settings.sequential;
+  ctlSequential.addEventListener('change', () => {
+    settings.sequential = ctlSequential.checked;
+    saveSettings(settings);
+    applySettingsToNodes();
+  });
+}
 
 // DB requests range
 const dbNVal = document.getElementById('val-db-n');
