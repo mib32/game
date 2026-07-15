@@ -21,7 +21,7 @@ export class TrafficSource extends Node {
   generateRequest(sim) {
     for (const outPort of this.outputs) {
       for (const conn of outPort.connections) {
-        sim.stats.totalApiRequests++;
+        sim.stats.inc('requests_total', { type: 'api' });
         sim.spawnParticle(new Particle('api', conn));
       }
     }

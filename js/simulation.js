@@ -3,6 +3,7 @@ import { Backend } from './nodes/Backend.js';
 import { PostgreSQL } from './nodes/PostgreSQL.js';
 import { Connection } from './core/Connection.js';
 import { Particle } from './core/Particle.js';
+import { StatsCollector } from './core/StatsCollector.js';
 
 /**
  * Simulation — управляет графом узлов и связей.
@@ -19,13 +20,8 @@ export class Simulation {
 
     this._simTime = 0;
 
-    // Статистика
-    this.stats = {
-      totalApiRequests: 0,
-      totalDbRequests: 0,
-      success: 0,
-      fail: 0,
-    };
+    /** @type {StatsCollector} */
+    this.stats = new StatsCollector();
   }
 
   /** Реестр типов узлов — pluggable! */

@@ -38,7 +38,7 @@ export class Backend extends Node {
     particle.processingStartedAt = sim._simTime; // для таймаута (Stage 4)
 
     // const N = Math.floor(Math.random() * 5) + 1; // 1..5
-    const N = 1;
+    const N = 3;
     const children = [];
 
     for (let i = 0; i < N; i++) {
@@ -49,7 +49,7 @@ export class Backend extends Node {
 
       for (const outPort of this.outputs) {
         for (const conn of outPort.connections) {
-          sim.stats.totalDbRequests++;
+          sim.stats.inc('requests_total', { type: 'sql' });
           children.push(new Particle('sql', conn, PARTICLE_SPEED, baseTime));
         }
       }
@@ -80,8 +80,10 @@ export class Backend extends Node {
       this.pendingParents--;
       if (parentParticle._anyChildFailed) {
         parentParticle.state = 'error';
+        sim.stats.inc('requests_outcome', { type: 'api', status: 'error' });
       } else {
         parentParticle.state = 'success';
+        sim.stats.inc('requests_outcome', { type: 'api', status: 'success' });
       }
       parentParticle.stateChangedAt = null; // сброс для вспышки
     }

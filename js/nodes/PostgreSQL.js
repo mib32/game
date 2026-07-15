@@ -59,7 +59,7 @@ export class PostgreSQL extends Node {
       particle.state = 'error';
       particle.x = this.x;
       particle.y = this.y;
-      sim.stats.fail++;
+      sim.stats.inc('requests_outcome', { type: 'sql', status: 'error' });
       this._notifyParent(particle, false, sim);
       return null;
     }
@@ -91,7 +91,7 @@ export class PostgreSQL extends Node {
     for (const p of completed) {
       this._activeParticles = this._activeParticles.filter(x => x !== p);
       p.state = 'success';
-      sim.stats.success++;
+      sim.stats.inc('requests_outcome', { type: 'sql', status: 'success' });
       this.dbSize++;
 
       // Уведомляем родительский Backend о завершении ребёнка
