@@ -38,7 +38,7 @@ export class Simulation {
       color: '#4a3f1a',
       inputs: [{ type: 'api' }],
       outputs: [{ type: 'sql' }],
-      factory: (x, y) => new Backend(x, y),
+      factory: (x, y, opts) => new Backend(x, y, opts),
     },
     PostgreSQL: {
       label: 'PostgreSQL',
@@ -50,10 +50,10 @@ export class Simulation {
   };
 
   /** Создать узел заданного типа */
-  createNode(type, x, y) {
+  createNode(type, x, y, opts) {
     const def = Simulation.nodeTypes[type];
     if (!def) throw new Error(`Unknown node type: ${type}`);
-    const node = def.factory(x, y);
+    const node = def.factory(x, y, opts);
     this.nodes.push(node);
     return node;
   }
@@ -164,6 +164,13 @@ export class Simulation {
     // 3. Тик PostgreSQL (проверка завершения процессинга)
     for (const node of this.nodes) {
       if (node instanceof PostgreSQL) {
+        node.tick(simTime, this);
+      }
+    }
+
+    // 3.1 Тик Backend (проверка таймаутов)
+    for (const node of this.nodes) {
+      if (node instanceof Backend) {
         node.tick(simTime, this);
       }
     }

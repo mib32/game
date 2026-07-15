@@ -8,24 +8,63 @@
 </head>
 <body>
   <div id="app">
-    <div id="sidebar">
-      <h2>Nodes</h2>
-      <div id="palette"></div>
-      <button id="btn-generate">⚡ Generate Request</button>
-      <div id="info">
-        <p><strong>Place:</strong> select type → click canvas</p>
-        <p><strong>Connect:</strong> click node A → click node B</p>
-        <p><strong>Move:</strong> drag node</p>
-        <p><strong>Delete:</strong> select node → Delete key</p>
-        <p><strong>Cancel:</strong> Esc</p>
-      </div>
-      <div id="stats">
-        <h3>Statistics</h3>
-        <div id="stats-content"></div>
-      </div>
-    </div>
     <div id="canvas-container">
       <canvas id="sim-canvas"></canvas>
+    </div>
+    <div id="toolbar">
+      <!-- Column 1: Palette -->
+      <div class="toolbar-col">
+        <div class="toolbar-section">
+          <h3>Nodes</h3>
+          <div id="palette"></div>
+        </div>
+        <button id="btn-generate">⚡ Generate Request</button>
+      </div>
+
+      <!-- Column 2: Backend settings -->
+      <div class="toolbar-col">
+        <div class="toolbar-section">
+          <h3>Backend</h3>
+
+          <label class="ctl-label">Timeout <span id="val-timeout">5000ms</span></label>
+          <input type="range" id="ctl-timeout" min="500" max="30000" step="500" value="5000">
+
+          <label class="ctl-label">On timeout</label>
+          <select id="ctl-on-timeout">
+            <option value="abort">Abort children</option>
+            <option value="detach">Let children finish</option>
+          </select>
+
+          <label class="ctl-label">DB requests <span id="val-db-n">1 – 5</span></label>
+          <div class="range-pair">
+            <input type="range" id="ctl-db-min" min="1" max="20" step="1" value="1">
+            <input type="range" id="ctl-db-max" min="1" max="20" step="1" value="5">
+          </div>
+
+          <label class="ctl-label">Processing time <span id="val-db-time">300 – 1500ms</span></label>
+          <div class="range-pair">
+            <input type="range" id="ctl-time-min" min="50" max="10000" step="50" value="300">
+            <input type="range" id="ctl-time-max" min="50" max="10000" step="50" value="1500">
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 3: Stats -->
+      <div class="toolbar-col">
+        <div class="toolbar-section" id="stats">
+          <h3>Statistics</h3>
+          <div id="stats-content"></div>
+        </div>
+      </div>
+
+      <!-- Column 4: Help -->
+      <div class="toolbar-col toolbar-help">
+        <p><strong>Place:</strong> select type → click canvas</p>
+        <p><strong>Connect:</strong> click A → click B</p>
+        <p><strong>Move:</strong> drag node</p>
+        <p><strong>Delete:</strong> select → Del</p>
+        <p><strong>Cancel:</strong> Esc</p>
+      </div>
     </div>
   </div>
   <script type="module" src="js/main.js"></script>

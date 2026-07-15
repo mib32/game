@@ -1,21 +1,60 @@
 import { Simulation } from './simulation.js';
 import { Renderer } from './renderer.js';
+import { Backend } from './nodes/Backend.js';
 
 // --- Инициализация ---
 const canvas = document.getElementById('sim-canvas');
 const renderer = new Renderer(canvas);
 const sim = new Simulation();
 
+// --- Настройки (localStorage) ---
+const SETTINGS_KEY = 'sim-settings';
+
+const DEFAULT_SETTINGS = {
+  timeoutMs: 5000,
+  onTimeout: 'abort',
+  dbRequestsMin: 1,
+  dbRequestsMax: 5,
+  processingMin: 300,
+  processingMax: 1500,
+};
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch (_) { /* ignore */ }
+  return { ...DEFAULT_SETTINGS };
+}
+
+function saveSettings(s) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch (_) { /* ignore */ }
+}
+
+const settings = loadSettings();
+
+/** Применить настройки ко всем Backend-узлам */
+function applySettingsToNodes() {
+  for (const node of sim.nodes) {
+    if (node instanceof Backend) {
+      node.applySettings(settings);
+    }
+  }
+  requestRender();
+}
+
 // --- Состояние взаимодействия ---
-let paletteSelected = null;        // выбранный в палитре тип узла
-let selectedNode = null;          // выделенный узел (для delete, connect start)
-let connectingFrom = null;        // узел-источник для создания связи
-let dragTarget = null;            // перетаскиваемый узел
-let dragState = null;             // { node, startX, startY, offsetX, offsetY } — потенциальный drag
+let paletteSelected = null;
+let selectedNode = null;
+let connectingFrom = null;
+let dragTarget = null;
+let dragState = null;
 let mouse = { x: 0, y: 0 };
 const DRAG_THRESHOLD = 4;
-let needsRender = true;           // флаг: нужен ли перерендер в этом кадре
-let simTime = 0;                  // время симуляции (ms) — для анимации частиц
+let needsRender = true;
+let simTime = 0;
 
 // --- Палитра ---
 function buildPalette() {
@@ -28,13 +67,11 @@ function buildPalette() {
     el.textContent = def.label;
     el.dataset.type = type;
 
-    // CSS-класс для цвета
     if (type === 'TrafficSource') el.classList.add('source');
     else if (type === 'Backend') el.classList.add('backend');
     else if (type === 'PostgreSQL') el.classList.add('database');
 
     el.addEventListener('click', () => {
-      // Снять выделение с предыдущего
       document.querySelectorAll('.palette-item').forEach(e => e.classList.remove('selected'));
       el.classList.add('selected');
       paletteSelected = type;
@@ -49,7 +86,6 @@ function buildPalette() {
 
 // --- Поиск узла по координатам ---
 function hitTest(x, y) {
-  // Ищем сверху вниз (последний добавленный — сверху)
   for (let i = sim.nodes.length - 1; i >= 0; i--) {
     if (sim.nodes[i].containsPoint(x, y)) {
       return sim.nodes[i];
@@ -70,8 +106,7 @@ canvas.addEventListener('mousedown', (e) => {
   const hitNode = hitTest(pos.x, pos.y);
 
   if (paletteSelected && !hitNode) {
-    // Размещаем новый узел
-    sim.createNode(paletteSelected, pos.x, pos.y);
+    sim.createNode(paletteSelected, pos.x, pos.y, settings);
     paletteSelected = null;
     document.querySelectorAll('.palette-item').forEach(e => e.classList.remove('selected'));
     requestRender();
@@ -87,7 +122,6 @@ canvas.addEventListener('mousedown', (e) => {
       offsetY: pos.y - hitNode.y,
     };
   } else {
-    // Клик по пустоте — сброс
     connectingFrom = null;
     selectedNode = null;
     dragState = null;
@@ -99,7 +133,6 @@ canvas.addEventListener('mousemove', (e) => {
   const pos = getCanvasPos(e);
   mouse = pos;
 
-  // Меняем курсор в зависимости от контекста
   const hitNode = hitTest(pos.x, pos.y);
   if (dragTarget) {
     canvas.style.cursor = 'grabbing';
@@ -126,7 +159,6 @@ canvas.addEventListener('mousemove', (e) => {
     }
   }
 
-  // Запрашиваем рендер только если есть draft-линия для отрисовки
   if (connectingFrom && !dragTarget) {
     requestRender();
   }
@@ -137,27 +169,21 @@ canvas.addEventListener('mouseup', (e) => {
   const hitNode = hitTest(pos.x, pos.y);
 
   if (dragTarget) {
-    // Был drag — завершаем
     dragTarget = null;
     dragState = null;
   } else if (dragState) {
-    // Был click (без перемещения) на узле
     const node = dragState.node;
     dragState = null;
 
     if (connectingFrom === null) {
-      // Первый клик: начинаем соединение
       connectingFrom = node;
       selectedNode = node;
     } else if (connectingFrom === node) {
-      // Клик по тому же узлу: отмена
       connectingFrom = null;
       selectedNode = null;
     } else {
-      // Второй клик: пытаемся создать связь
       const conn = sim.createConnection(connectingFrom, node);
       if (!conn) {
-        // Не удалось — возможно, пробуем обратное направление
         sim.createConnection(node, connectingFrom);
       }
       connectingFrom = null;
@@ -216,7 +242,6 @@ function render() {
   renderer.clear();
   renderer.drawConnections(sim.connections);
 
-  // Черновая линия при создании связи
   if (connectingFrom && !dragTarget) {
     renderer.drawDraftLine(connectingFrom, mouse.x, mouse.y);
   }
@@ -224,7 +249,6 @@ function render() {
   renderer.drawNodes(sim.nodes, selectedNode, connectingFrom);
   renderer.drawParticles(sim.particles, simTime);
 
-  // Обновляем статистику
   updateStats();
 }
 
@@ -235,11 +259,8 @@ function frame(now) {
   lastFrameTime = now;
   simTime += dt;
 
-  // Update simulation (cheap — only iterates particles)
   sim.update(Math.min(dt, 100), simTime);
 
-  // Only render when something actually changed OR particles are animating.
-  // When particles just dropped to zero, do one final frame to clear ghosts.
   const hasParticles = sim.particles.length > 0;
   if (needsRender || hasParticles || _hadParticles) {
     render();
@@ -264,7 +285,6 @@ function updateStats() {
   const dbErr = s.get('requests_outcome', { type: 'sql', status: 'error' });
   const hasActivity = s.totalApiRequests > 0 || s.totalDbRequests > 0 || sim.particles.length > 0;
 
-  // Avoid DOM writes when nothing changed
   const key = `${s.totalApiRequests}|${s.totalDbRequests}|${apiOk}|${apiErr}|${dbOk}|${dbErr}|${sim.particles.length}|${hasActivity}`;
   if (key === _lastStats) return;
   _lastStats = key;
@@ -286,9 +306,7 @@ function updateStats() {
 const generateBtn = document.getElementById('btn-generate');
 if (generateBtn) {
   generateBtn.addEventListener('click', () => {
-    // Проверяем, есть ли соединённые цепочки
     if (sim.connections.length === 0) {
-      // Показываем подсказку
       generateBtn.textContent = 'Connect nodes first!';
       setTimeout(() => { generateBtn.textContent = '⚡ Generate Request'; }, 1500);
       return;
@@ -296,14 +314,70 @@ if (generateBtn) {
     sim.generateFromSources();
   });
 }
+
+// --- Controls wiring ---
+function bindSlider(id, settingKey, format, onChange) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = settings[settingKey];
+  el.addEventListener('input', () => {
+    settings[settingKey] = Number(el.value);
+    saveSettings(settings);
+    applySettingsToNodes();
+    if (onChange) onChange();
+  });
+}
+
+function bindSelect(id, settingKey, onChange) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = settings[settingKey];
+  el.addEventListener('change', () => {
+    settings[settingKey] = el.value;
+    saveSettings(settings);
+    applySettingsToNodes();
+    if (onChange) onChange();
+  });
+}
+
+// Timeout slider
+const timeoutVal = document.getElementById('val-timeout');
+bindSlider('ctl-timeout', 'timeoutMs', v => v + 'ms', () => {
+  timeoutVal.textContent = settings.timeoutMs + 'ms';
+});
+
+// On-timeout dropdown
+bindSelect('ctl-onTimeout', 'onTimeout');
+
+// DB requests range
+const dbNVal = document.getElementById('val-db-n');
+function updateDbNLabel() {
+  dbNVal.textContent = settings.dbRequestsMin + ' \u2013 ' + settings.dbRequestsMax;
+}
+bindSlider('ctl-db-min', 'dbRequestsMin', null, updateDbNLabel);
+bindSlider('ctl-db-max', 'dbRequestsMax', null, updateDbNLabel);
+
+// Processing time range
+const dbTimeVal = document.getElementById('val-db-time');
+function updateDbTimeLabel() {
+  dbTimeVal.textContent = settings.processingMin + ' \u2013 ' + settings.processingMax + 'ms';
+}
+bindSlider('ctl-time-min', 'processingMin', null, updateDbTimeLabel);
+bindSlider('ctl-time-max', 'processingMax', null, updateDbTimeLabel);
+
+// Initialise labels
+timeoutVal.textContent = settings.timeoutMs + 'ms';
+updateDbNLabel();
+updateDbTimeLabel();
+
+// --- Инициализация ---
 buildPalette();
 
-// Размещаем демо-узлы для наглядности
+// Размещаем демо-узлы
 const ts = sim.createNode('TrafficSource', 150, 200);
-const be = sim.createNode('Backend', 400, 200);
+const be = sim.createNode('Backend', 400, 200, settings);
 const pg = sim.createNode('PostgreSQL', 650, 200);
 
-// ?test — предварительно соединяем все три узла
 if (window.location.search.includes('test')) {
   sim.createConnection(ts, be);
   sim.createConnection(be, pg);
@@ -312,6 +386,6 @@ if (window.location.search.includes('test')) {
 
 requestAnimationFrame(frame);
 
-// Экспорт для доступа из консоли (удобно для отладки)
+// Экспорт для отладки
 window.sim = sim;
 window.renderer = renderer;
