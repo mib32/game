@@ -161,18 +161,9 @@ export class Simulation {
       }
     }
 
-    // 3. Тик PostgreSQL (проверка завершения процессинга)
+    // 3. Тик узлов (PostgreSQL + Backend) — один проход по всем узлам
     for (const node of this.nodes) {
-      if (node instanceof PostgreSQL) {
-        node.tick(simTime, this);
-      }
-    }
-
-    // 3.1 Тик Backend (проверка таймаутов)
-    for (const node of this.nodes) {
-      if (node instanceof Backend) {
-        node.tick(simTime, this);
-      }
+      if (node.tick) node.tick(simTime, this);
     }
 
     // 3.5 Накопление serviceMs: только для processing-частиц (дети на PostgreSQL)

@@ -194,26 +194,36 @@ export class Renderer {
     const ctx = this.ctx;
     if (particles.length === 0) return;
 
-    for (const p of particles) {
+    // Предварительно выносим часто используемые операции
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+
+    // Первый проход: рисуем графику частиц
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+
       // Терминальные состояния — рисуем вспышку-кольцо
       if (p.state === 'success' || p.state === 'error') {
         if (p.stateChangedAt != null) {
           const elapsed = time - p.stateChangedAt;
           const flashProgress = Math.min(elapsed / 400, 1);
-          const ringR = 5 + flashProgress * 15;
-          const alpha = 1 - flashProgress;
-          ctx.strokeStyle = p.state === 'success'
-            ? `rgba(102, 187, 106, ${alpha})`
-            : `rgba(239, 83, 80, ${alpha})`;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
-          ctx.stroke();
+          if (flashProgress < 1) {
+            const ringR = 5 + flashProgress * 15;
+            const alpha = 1 - flashProgress;
+            ctx.strokeStyle = p.state === 'success'
+              ? `rgba(102, 187, 106, ${alpha})`
+              : `rgba(239, 83, 80, ${alpha})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
         continue;
       }
 
-      // Родитель ждёт на Backend — жёлтая пульсация
+      // Родитель ждёт на Backend — жёлтая пульсация (без shadowBlur)
       if (p.state === 'pending') {
         const pulse = Math.sin(time * 0.006 + p.id * 0.7) * 0.4 + 0.6;
         const r = 7 * pulse;
@@ -274,19 +284,20 @@ export class Renderer {
       ctx.shadowBlur = 0;
     }
 
-    // Lifespan labels (second pass — after all particles drawn)
-    ctx.font = '9px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    for (const p of particles) {
-      // Compute display time:
-      // - processing / success / error: own accumulated serviceMs
-      // - pending (parent): own + sum of children's current serviceMs (excludes wire)
+    // Второй проход: lifespan labels (только если есть displayMs > 0)
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+
+      // Быстрый расчёт displayMs без reduce
       let displayMs = p.serviceMs;
       if (p.state === 'pending' && p._children) {
-        displayMs += p._children.reduce((s, c) => s + c.serviceMs, 0);
+        const kids = p._children;
+        for (let j = 0; j < kids.length; j++) {
+          displayMs += kids[j].serviceMs;
+        }
       }
       if (displayMs <= 0) continue;
+
       const sec = displayMs / 1000;
       const label = sec < 10
         ? sec.toFixed(2) + 's'

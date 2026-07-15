@@ -109,12 +109,10 @@ export class PostgreSQL extends Node {
 
   /** Уведомить родительский Backend-узел о завершении дочернего запроса */
   _notifyParent(particle, success, sim) {
-    // Ищем родительскую частицу (она в pending на Backend)
-    for (const p of sim.particles) {
-      if (p.state === 'pending' && p._children && p._children.includes(particle)) {
-        p._parentNode.onChildComplete(p, success, sim);
-        break;
-      }
+    // Прямой обратный указатель (установлен в Backend.receive) — без O(n) сканирования
+    const parent = particle._parentParticle;
+    if (parent && parent._parentNode) {
+      parent._parentNode.onChildComplete(parent, success, sim);
     }
   }
 }

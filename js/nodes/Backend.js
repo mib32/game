@@ -27,6 +27,9 @@ export class Backend extends Node {
 
     this.pendingParents = 0;
 
+    /** @type {Set<Particle>} — отслеживаем только свои pending-частицы */
+    this._pending = new Set();
+
     // Настройки (с дефолтами)
     this.timeoutMs        = opts.timeoutMs ?? 5000;
     this.onTimeout        = opts.onTimeout ?? 'abort';
@@ -53,7 +56,7 @@ export class Backend extends Node {
     particle.state = 'pending';
     particle.x = this.x;
     particle.y = this.y;
-    particle.processingStartedAt = sim._simTime; // для таймаута
+    particle.processingStartedAt = sim._simTime;
 
     const N = this.dbRequestsMin === this.dbRequestsMax
       ? this.dbRequestsMin
@@ -67,37 +70,45 @@ export class Backend extends Node {
       for (const outPort of this.outputs) {
         for (const conn of outPort.connections) {
           sim.stats.inc('requests_total', { type: 'sql' });
-          children.push(new Particle('sql', conn, PARTICLE_SPEED, baseTime));
+          const child = new Particle('sql', conn, PARTICLE_SPEED, baseTime);
+          child._parentParticle = particle;  // прямой обратный указатель
+          children.push(child);
         }
       }
     }
 
     this.pendingParents++;
+    this._pending.add(particle);
     particle._children = children;
     particle._parentNode = this;
+    particle._childrenServiceMs = 0;  // кеш для tick
 
     return { particles: children };
   }
 
   /**
-   * Тик — проверка таймаутов по serviceMs (исключает wire-time).
-   * Вызывается из Simulation.update.
+   * Тик — проверка таймаутов.
+   * Итерирует ТОЛЬКО свои pending-частицы, а не все sim.particles.
    */
   tick(simTime, sim) {
-    if (this.timeoutMs <= 0) return;
+    if (this.timeoutMs <= 0 || this._pending.size === 0) return;
 
-    for (const p of sim.particles) {
-      if (p.state !== 'pending' || p._parentNode !== this) continue;
-
-      // Service time = own + sum of children's (excludes arbitrary wire fly-time)
-      const serviceTime = p.serviceMs + (p._children
-        ? p._children.reduce((s, c) => s + c.serviceMs, 0)
-        : 0);
+    for (const p of this._pending) {
+      // Инкрементально считаем children serviceMs (без reduce каждый кадр)
+      let childTotal = p._childrenServiceMs;
+      if (p._children) {
+        for (let i = 0; i < p._children.length; i++) {
+          childTotal += p._children[i].serviceMs;
+        }
+      }
+      const serviceTime = p.serviceMs + childTotal;
 
       if (serviceTime < this.timeoutMs) continue;
 
       // Таймаут!
       p.state = 'error';
+      this._pending.delete(p);
+      this.pendingParents--;
       sim.stats.inc('requests_outcome', { type: 'api', status: 'error' });
 
       if (this.onTimeout === 'abort' && p._children) {
@@ -108,8 +119,6 @@ export class Backend extends Node {
           }
         }
       }
-
-      this.pendingParents--;
     }
   }
 
@@ -118,7 +127,6 @@ export class Backend extends Node {
    */
   onChildComplete(parentParticle, childSuccess, sim) {
     if (!parentParticle._children) return;
-    // Игнорируем, если родитель уже свалился по таймауту
     if (parentParticle.state !== 'pending') return;
 
     parentParticle._completedChildren = (parentParticle._completedChildren || 0) + 1;
@@ -127,8 +135,16 @@ export class Backend extends Node {
     }
 
     if (parentParticle._completedChildren >= parentParticle._children.length) {
+      this._pending.delete(parentParticle);
       this.pendingParents--;
-      parentParticle.serviceMs += parentParticle._children.reduce((s, c) => s + c.serviceMs, 0);
+
+      // Суммируем children serviceMs (один раз, без reduce)
+      let total = 0;
+      for (let i = 0; i < parentParticle._children.length; i++) {
+        total += parentParticle._children[i].serviceMs;
+      }
+      parentParticle.serviceMs += total;
+
       if (parentParticle._anyChildFailed) {
         parentParticle.state = 'error';
         sim.stats.inc('requests_outcome', { type: 'api', status: 'error' });

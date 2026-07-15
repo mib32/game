@@ -33,6 +33,13 @@ function saveSettings(s) {
   } catch (_) { /* ignore */ }
 }
 
+// Debounced версия для слайдеров (чтобы не спамить localStorage на каждое событие input)
+let _saveTimer = null;
+function saveSettingsDebounced() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => saveSettings(settings), 200);
+}
+
 const settings = loadSettings();
 
 /** Применить настройки ко всем Backend-узлам */
@@ -322,7 +329,7 @@ function bindSlider(id, settingKey, format, onChange) {
   el.value = settings[settingKey];
   el.addEventListener('input', () => {
     settings[settingKey] = Number(el.value);
-    saveSettings(settings);
+    saveSettingsDebounced();
     applySettingsToNodes();
     if (onChange) onChange();
   });
@@ -375,7 +382,7 @@ ctlDbMin.addEventListener('input', () => {
   const [vMin, vMax] = clampRange(ctlDbMin, ctlDbMax, 'dbRequestsMin');
   settings.dbRequestsMin = vMin;
   settings.dbRequestsMax = vMax;
-  saveSettings(settings);
+  saveSettingsDebounced();
   applySettingsToNodes();
   updateDbNLabel();
 });
@@ -383,7 +390,7 @@ ctlDbMax.addEventListener('input', () => {
   const [vMin, vMax] = clampRange(ctlDbMin, ctlDbMax, 'dbRequestsMax');
   settings.dbRequestsMin = vMin;
   settings.dbRequestsMax = vMax;
-  saveSettings(settings);
+  saveSettingsDebounced();
   applySettingsToNodes();
   updateDbNLabel();
 });
@@ -401,7 +408,7 @@ ctlTimeMin.addEventListener('input', () => {
   const [vMin, vMax] = clampRange(ctlTimeMin, ctlTimeMax, 'processingMin');
   settings.processingMin = vMin;
   settings.processingMax = vMax;
-  saveSettings(settings);
+  saveSettingsDebounced();
   applySettingsToNodes();
   updateDbTimeLabel();
 });
@@ -409,7 +416,7 @@ ctlTimeMax.addEventListener('input', () => {
   const [vMin, vMax] = clampRange(ctlTimeMin, ctlTimeMax, 'processingMax');
   settings.processingMin = vMin;
   settings.processingMax = vMax;
-  saveSettings(settings);
+  saveSettingsDebounced();
   applySettingsToNodes();
   updateDbTimeLabel();
 });
