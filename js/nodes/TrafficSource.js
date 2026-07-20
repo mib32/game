@@ -13,12 +13,31 @@ export class TrafficSource extends Node {
       inputs: [],
       outputs: [{ type: 'api' }],
     });
-    this.rate = 1; // запросов в секунду (для Stage 4)
-    this.timer = 0;
+
+    /** Запросов в секунду в автоматическом режиме (0 = только ручной) */
+    this.autoRate = 0;
+    this._spawnAccumulator = 0;
+  }
+
+  /**
+   * Автоматический спавн по rate (accumulator-паттерн).
+   * Вызывается из Simulation.update каждый кадр.
+   */
+  tick(simTime, dt, sim) {
+    if (this.autoRate <= 0) return;
+    const dtSec = dt / 1000;
+    this._spawnAccumulator += this.autoRate * dtSec;
+    while (this._spawnAccumulator >= 1) {
+      this.generateRequest(sim);
+      this._spawnAccumulator -= 1;
+    }
   }
 
   /** Сгенерировать один API-запрос на все выходные связи */
   generateRequest(sim) {
+    // Регистрируем спавн для подсчёта эффективного RPS
+    sim.recordApiSpawn();
+
     for (const outPort of this.outputs) {
       for (const conn of outPort.connections) {
         sim.stats.inc('requests_total', { type: 'api' });

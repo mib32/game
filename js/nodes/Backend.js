@@ -109,7 +109,7 @@ export class Backend extends Node {
    * Тик — проверка таймаутов.
    * Итерирует ТОЛЬКО свои pending-частицы, а не все sim.particles.
    */
-  tick(simTime, sim) {
+  tick(simTime, dt, sim) {
     if (this.timeoutMs <= 0 || this._pending.size === 0) return;
 
     for (const p of this._pending) {

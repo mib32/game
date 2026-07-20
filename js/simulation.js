@@ -20,6 +20,9 @@ export class Simulation {
 
     this._simTime = 0;
 
+    /** Timestamp'ы спавнов API-запросов для расчёта эффективного RPS */
+    this._apiSpawnTimestamps = [];
+
     /** @type {StatsCollector} */
     this.stats = new StatsCollector();
   }
@@ -48,6 +51,28 @@ export class Simulation {
       factory: (x, y) => new PostgreSQL(x, y),
     },
   };
+
+  /** Зарегистрировать спавн API-запроса (для rate-метрики) */
+  recordApiSpawn() {
+    this._apiSpawnTimestamps.push(this._simTime);
+  }
+
+  /**
+   * Эффективный rate спавна API-запросов за последние windowMs.
+   * @param {number} windowMs
+   * @returns {number} запросов/сек
+   */
+  getApiRate(windowMs = 2000) {
+    const cutoff = this._simTime - windowMs;
+    // Удаляем старые timestamp'ы из начала массива
+    while (this._apiSpawnTimestamps.length > 0 && this._apiSpawnTimestamps[0] < cutoff) {
+      this._apiSpawnTimestamps.shift();
+    }
+    if (this._apiSpawnTimestamps.length === 0) return 0;
+    const span = this._simTime - this._apiSpawnTimestamps[0];
+    if (span <= 0) return 0;
+    return (this._apiSpawnTimestamps.length / span) * 1000;
+  }
 
   /** Создать узел заданного типа */
   createNode(type, x, y, opts) {
@@ -161,9 +186,9 @@ export class Simulation {
       }
     }
 
-    // 3. Тик узлов (PostgreSQL + Backend) — один проход по всем узлам
+    // 3. Тик узлов (PostgreSQL + Backend + TrafficSource) — один проход
     for (const node of this.nodes) {
-      if (node.tick) node.tick(simTime, this);
+      if (node.tick) node.tick(simTime, dt, this);
     }
 
     // 3.5 Накопление serviceMs: только для processing-частиц (дети на PostgreSQL)

@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS = {
   dbRequestsMax: 5,
   processingMin: 300,
   processingMax: 1500,
+  autoRate: 0,
 };
 
 function loadSettings() {
@@ -43,11 +44,14 @@ function saveSettingsDebounced() {
 
 const settings = loadSettings();
 
-/** Применить настройки ко всем Backend-узлам */
+/** Применить настройки ко всем узлам */
 function applySettingsToNodes() {
   for (const node of sim.nodes) {
     if (node instanceof Backend) {
       node.applySettings(settings);
+    }
+    if (node.type === 'TrafficSource') {
+      node.autoRate = settings.autoRate;
     }
   }
   requestRender();
@@ -293,7 +297,7 @@ function updateStats() {
   const dbErr = s.get('requests_outcome', { type: 'sql', status: 'error' });
   const hasActivity = s.totalApiRequests > 0 || s.totalDbRequests > 0 || sim.particles.length > 0;
 
-  const key = `${s.totalApiRequests}|${s.totalDbRequests}|${apiOk}|${apiErr}|${dbOk}|${dbErr}|${sim.particles.length}|${hasActivity}`;
+  const key = `${s.totalApiRequests}|${s.totalDbRequests}|${apiOk}|${apiErr}|${dbOk}|${dbErr}|${sim.particles.length}|${hasActivity}|${sim.getApiRate().toFixed(1)}`;
   if (key === _lastStats) return;
   _lastStats = key;
 
@@ -306,6 +310,8 @@ function updateStats() {
     <div class="stat-section">DB</div>
     <div class="stat-row"><span class="stat-label">sent</span><span class="stat-value total">${s.totalDbRequests}</span></div>
     <div class="stat-row"><span class="stat-label">ok / err</span><span class="stat-value success">${dbOk}</span><span class="stat-value fail" style="margin-left:4px">${dbErr}</span></div>
+    <div class="stat-section">Traffic</div>
+    <div class="stat-row"><span class="stat-label">Effective RPS</span><span class="stat-value total">${sim.getApiRate().toFixed(1)}</span></div>
     <div class="stat-row"><span class="stat-label">In flight</span><span class="stat-value">${sim.particles.length}</span></div>
   `;
 }
@@ -437,6 +443,27 @@ ctlTimeMax.addEventListener('input', () => {
 timeoutVal.textContent = settings.timeoutMs + 'ms';
 updateDbNLabel();
 updateDbTimeLabel();
+
+// Auto-traffic slider
+const autoRateVal = document.getElementById('val-auto-rate');
+const ctlAutoRate = document.getElementById('ctl-auto-rate');
+if (ctlAutoRate) {
+  ctlAutoRate.value = settings.autoRate;
+  autoRateVal.textContent = Number(settings.autoRate).toFixed(1) + ' req/s';
+
+  ctlAutoRate.addEventListener('input', () => {
+    const rate = Number(ctlAutoRate.value);
+    settings.autoRate = rate;
+    autoRateVal.textContent = rate.toFixed(1) + ' req/s';
+    saveSettingsDebounced();
+    // Применить ко всем TrafficSource-узлам
+    for (const node of sim.nodes) {
+      if (node.type === 'TrafficSource') {
+        node.autoRate = rate;
+      }
+    }
+  });
+}
 
 // --- Инициализация ---
 buildPalette();

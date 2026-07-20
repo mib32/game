@@ -78,7 +78,7 @@ export class PostgreSQL extends Node {
    * Обновление процессинга: проверяем, не завершились ли запросы.
    * Вызывается из Simulation.update.
    */
-  tick(simTime, sim) {
+  tick(simTime, dt, sim) {
     const completed = [];
 
     for (const p of this._activeParticles) {
