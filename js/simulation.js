@@ -20,6 +20,26 @@ export class Simulation {
 
     this._simTime = 0;
 
+    // ── Пользователи ──
+    /** Количество активных пользователей. Драйвит RPS. */
+    this.users = 0;
+
+    /** Прогресс до следующего пользователя (0..userProgressTarget) */
+    this.userProgress = 0;
+
+    /** Порог прогресса для получения следующего пользователя. Растёт с каждым юзером. */
+    this.userProgressTarget = 5;
+
+    // ── Satisfaction (буфер churn'а) ──
+    /**
+     * Satisfaction 0–100. Пока > 30 — юзеры не уходят.
+     * При падении ниже 30 начинается отток.
+     */
+    this.satisfaction = 100;
+
+    /** Дробный накопитель churn'а — вычитаем юзеров только целыми */
+    this._churnAccumulator = 0;
+
     /** Timestamp'ы спавнов API-запросов для расчёта эффективного RPS */
     this._apiSpawnTimestamps = [];
 
@@ -64,7 +84,6 @@ export class Simulation {
    */
   getApiRate(windowMs = 2000) {
     const cutoff = this._simTime - windowMs;
-    // Удаляем старые timestamp'ы из начала массива
     while (this._apiSpawnTimestamps.length > 0 && this._apiSpawnTimestamps[0] < cutoff) {
       this._apiSpawnTimestamps.shift();
     }
@@ -94,7 +113,6 @@ export class Simulation {
     for (const conn of toRemove) {
       this.removeConnection(conn);
     }
-    // Удаляем pending-частицы на узле
     this.particles = this.particles.filter(p => {
       if (p.state === 'pending' && p._parentNode === node) return false;
       if (p.state === 'processing' && node._activeParticles && node._activeParticles.includes(p)) return false;
@@ -135,12 +153,20 @@ export class Simulation {
    * Обновление симуляции:
    * 1. Движение travelling-частиц
    * 2. Прибытие → вызов node.receive()
-   * 3. PostgreSQL.tick() — проверка процессинга
-   * 4. Очистка terminal-частиц (success/error)
+   * 3. Тики узлов (PostgreSQL + Backend + TrafficSource)
+   * 4. Очистка terminal-частиц
+   * 5. Satisfaction + progress + user growth + churn
    */
   update(dt, simTime) {
     this._simTime = simTime;
     const dtSec = dt / 1000;
+
+    // Snapshot до тика
+    const prevSqlSuccess = this.stats.get('requests_outcome', { type: 'sql', status: 'success' });
+    const prevSqlError = this.stats.get('requests_outcome', { type: 'sql', status: 'error' });
+    const prevApiSuccess = this.stats.get('requests_outcome', { type: 'api', status: 'success' });
+    const prevApiError = this.stats.get('requests_outcome', { type: 'api', status: 'error' });
+
     const arrived = [];
 
     // 1. Двигаем travelling-частицы
@@ -153,12 +179,9 @@ export class Simulation {
       const to = p.connection.to.node;
       const t = Math.min(p.progress, 1);
 
-      // Base position along the connection line
       const dx = to.x - from.x;
       const dy = to.y - from.y;
       const len = Math.sqrt(dx * dx + dy * dy) || 1;
-
-      // Perpendicular unit vector for axial spread
       const perpX = -dy / len;
       const perpY = dx / len;
 
@@ -170,14 +193,11 @@ export class Simulation {
       }
     }
 
-    // 2. Обработка прибывших (единожды — меняем state сразу)
+    // 2. Обработка прибывших
     for (const p of arrived) {
       p.progress = 1;
       const targetNode = p.connection.to.node;
       const result = targetNode.receive(p, this);
-
-      // receive() сам меняет state: 'pending', 'processing', 'success', 'error'
-      // поэтому частица больше не попадёт в travelling-фильтр выше
 
       if (result && result.particles) {
         for (const newP of result.particles) {
@@ -186,30 +206,29 @@ export class Simulation {
       }
     }
 
-    // 3. Тик узлов (PostgreSQL + Backend + TrafficSource) — один проход
+    // 3. Тик узлов
     for (const node of this.nodes) {
       if (node.tick) node.tick(simTime, dt, this);
     }
 
-    // 3.5 Накопление serviceMs: только для processing-частиц (дети на PostgreSQL)
-    //     pending-родители не тикают — их время = сумма детей при завершении
+    // 3.5 serviceMs
     for (const p of this.particles) {
       if (p.state === 'processing') {
         p.serviceMs += dt;
       }
     }
 
-    // 3.5 Разносим parked-частицы по окружности вокруг их target-узла
+    // 3.5 Парковка частиц
     for (const p of this.particles) {
       if (p.state === 'traveling') continue;
       const node = p.connection.to.node;
-      const angle = (p.id * 2.399963) % (Math.PI * 2); // golden-angle spread
+      const angle = (p.id * 2.399963) % (Math.PI * 2);
       const radius = 15;
       p.x = node.x + Math.cos(angle) * radius;
       p.y = node.y + Math.sin(angle) * radius + Math.sin(simTime * 0.004 + p.id * 0.5) * 3;
     }
 
-    // 4. Очистка terminal-частиц после вспышки
+    // 4. Очистка terminal-частиц
     const FLASH_DURATION = 400;
     this.particles = this.particles.filter(p => {
       if (p.state === 'success' || p.state === 'error') {
@@ -225,9 +244,59 @@ export class Simulation {
       }
       return true;
     });
+
+    // 5. Satisfaction + progress + user growth + churn
+    const deltaSqlOk  = this.stats.get('requests_outcome', { type: 'sql', status: 'success' }) - prevSqlSuccess;
+    const deltaSqlErr = this.stats.get('requests_outcome', { type: 'sql', status: 'error' }) - prevSqlError;
+    const deltaApiOk  = this.stats.get('requests_outcome', { type: 'api', status: 'success' }) - prevApiSuccess;
+    const deltaApiErr = this.stats.get('requests_outcome', { type: 'api', status: 'error' }) - prevApiError;
+
+    // Прогресс: API-успехи добавляют очки к следующему юзеру
+    this.userProgress += deltaApiOk * 5;
+
+    // Проверка milestone
+    while (this.userProgress >= this.userProgressTarget) {
+      this.userProgress -= this.userProgressTarget;
+      this.users += 1;
+      this.satisfaction = Math.min(100, this.satisfaction + 3); // рост даёт буст
+      this.userProgressTarget = 5 + this.users * 2; // усложнение
+    }
+
+    // Satisfaction dynamics
+    this.satisfaction += (deltaSqlOk + deltaApiOk) * 0.05;
+    this.satisfaction -= (deltaSqlErr + deltaApiErr) * 0.5;
+    this.satisfaction -= 0.02 * dtSec; // decay
+    this.satisfaction = Math.max(0, Math.min(100, this.satisfaction));
+
+    // Churn: если satisfaction < 30 — теряем юзеров (целыми числами)
+    if (this.satisfaction < 30 && this.users > 0) {
+      const churnRate = ((30 - this.satisfaction) / 30) * 0.5; // юзеров/сек
+      this._churnAccumulator += churnRate * dtSec;
+      const lost = Math.floor(this._churnAccumulator);
+      if (lost > 0) {
+        this.users = Math.max(0, this.users - lost);
+        this._churnAccumulator -= lost;
+      }
+    } else {
+      this._churnAccumulator = 0; // сброс когда satisfaction восстановился
+    }
+
+    // autoRate = users × 0.1 rps на пользователя с медленным шумом
+    for (const node of this.nodes) {
+      if (node.type === 'TrafficSource') {
+        if (this.users === 0) {
+          node.autoRate = 0;
+          continue;
+        }
+        // Шум обновляется редко (~1% шанс на тик), чтобы трафик не дёргался
+        if (!node._randomFactor || Math.random() < 0.005) {
+          node._randomFactor = 0.7 + Math.random() * 0.6; // 0.7–1.3
+        }
+        node.autoRate = this.users * 0.1 * node._randomFactor;
+      }
+    }
   }
 
-  /** Сгенерировать один запрос из каждого TrafficSource */
   generateFromSources() {
     for (const node of this.nodes) {
       if (node instanceof TrafficSource) {
