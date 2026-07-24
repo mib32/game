@@ -30,15 +30,22 @@ export class Simulation {
     /** Порог прогресса для получения следующего пользователя. Растёт с каждым юзером. */
     this.userProgressTarget = 5;
 
-    // ── Satisfaction (буфер churn'а) ──
-    /**
-     * Satisfaction 0–100. Пока > 30 — юзеры не уходят.
-     * При падении ниже 30 начинается отток.
-     */
-    this.satisfaction = 100;
+    /** Всего приобретено пользователей (за всё время) */
+    this.usersGained = 0;
 
-    /** Дробный накопитель churn'а — вычитаем юзеров только целыми */
-    this._churnAccumulator = 0;
+    /** Всего потеряно пользователей из-за churn (за всё время) */
+    this.usersLostToChurn = 0;
+
+    // ── Churn ──
+    /**
+     * Каждый пользователь терпит 5 ошибок прежде чем разочароваться и уйти.
+     * 10 секунд без ошибок — счётчик обнуляется.
+     */
+    this.churnProgress = 0;
+    this.churnTarget = 5;
+
+    /** Timestamp последней API-ошибки (для автосброса через 10 сек) */
+    this._lastApiErrorTime = -Infinity;
 
     /** Timestamp'ы спавнов API-запросов для расчёта эффективного RPS */
     this._apiSpawnTimestamps = [];
@@ -162,8 +169,6 @@ export class Simulation {
     const dtSec = dt / 1000;
 
     // Snapshot до тика
-    const prevSqlSuccess = this.stats.get('requests_outcome', { type: 'sql', status: 'success' });
-    const prevSqlError = this.stats.get('requests_outcome', { type: 'sql', status: 'error' });
     const prevApiSuccess = this.stats.get('requests_outcome', { type: 'api', status: 'success' });
     const prevApiError = this.stats.get('requests_outcome', { type: 'api', status: 'error' });
 
@@ -245,40 +250,40 @@ export class Simulation {
       return true;
     });
 
-    // 5. Satisfaction + progress + user growth + churn
-    const deltaSqlOk  = this.stats.get('requests_outcome', { type: 'sql', status: 'success' }) - prevSqlSuccess;
-    const deltaSqlErr = this.stats.get('requests_outcome', { type: 'sql', status: 'error' }) - prevSqlError;
+    // 5. Growth + churn
     const deltaApiOk  = this.stats.get('requests_outcome', { type: 'api', status: 'success' }) - prevApiSuccess;
     const deltaApiErr = this.stats.get('requests_outcome', { type: 'api', status: 'error' }) - prevApiError;
 
-    // Прогресс: API-успехи добавляют очки к следующему юзеру
+    // Рост: API-успехи добавляют очки к следующему юзеру
     this.userProgress += deltaApiOk * 5;
 
-    // Проверка milestone
     while (this.userProgress >= this.userProgressTarget) {
       this.userProgress -= this.userProgressTarget;
       this.users += 1;
-      this.satisfaction = Math.min(100, this.satisfaction + 3); // рост даёт буст
-      this.userProgressTarget = 5 + this.users * 2; // усложнение
+      this.usersGained += 1;
+      this.userProgressTarget = 5 + this.users * 2;
     }
 
-    // Satisfaction dynamics
-    this.satisfaction += (deltaSqlOk + deltaApiOk) * 0.05;
-    this.satisfaction -= (deltaSqlErr + deltaApiErr) * 0.5;
-    this.satisfaction -= 0.02 * dtSec; // decay
-    this.satisfaction = Math.max(0, Math.min(100, this.satisfaction));
+    // Churn: каждый юзер терпит 5 ошибок прежде чем уйти
+    if (deltaApiErr > 0) {
+      this.churnProgress += deltaApiErr;
+      this._lastApiErrorTime = simTime;
+    }
 
-    // Churn: если satisfaction < 30 — теряем юзеров (целыми числами)
-    if (this.satisfaction < 30 && this.users > 0) {
-      const churnRate = ((30 - this.satisfaction) / 30) * 0.5; // юзеров/сек
-      this._churnAccumulator += churnRate * dtSec;
-      const lost = Math.floor(this._churnAccumulator);
-      if (lost > 0) {
-        this.users = Math.max(0, this.users - lost);
-        this._churnAccumulator -= lost;
-      }
-    } else {
-      this._churnAccumulator = 0; // сброс когда satisfaction восстановился
+    // Автосброс: 10 секунд без ошибок → churnProgress = 0
+    if (simTime - this._lastApiErrorTime > 10000) {
+      this.churnProgress = 0;
+    }
+
+    if (this.churnProgress >= this.churnTarget && this.users > 0) {
+      this.users -= 1;
+      this.usersLostToChurn += 1;
+      this.churnProgress = 0;
+    }
+
+    // При нуле юзеров счётчик всегда 0 — некому разочаровываться
+    if (this.users === 0) {
+      this.churnProgress = 0;
     }
 
     // autoRate = users × 0.1 rps на пользователя с медленным шумом
@@ -288,9 +293,8 @@ export class Simulation {
           node.autoRate = 0;
           continue;
         }
-        // Шум обновляется редко (~1% шанс на тик), чтобы трафик не дёргался
         if (!node._randomFactor || Math.random() < 0.005) {
-          node._randomFactor = 0.7 + Math.random() * 0.6; // 0.7–1.3
+          node._randomFactor = 0.7 + Math.random() * 0.6;
         }
         node.autoRate = this.users * 0.1 * node._randomFactor;
       }

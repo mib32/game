@@ -293,7 +293,7 @@ function updateStats() {
   const dbErr = s.get('requests_outcome', { type: 'sql', status: 'error' });
   const hasActivity = true; // always show stats
 
-  const key = `${s.totalApiRequests}|${s.totalDbRequests}|${apiOk}|${apiErr}|${dbOk}|${dbErr}|${sim.particles.length}|${hasActivity}|${sim.satisfaction.toFixed(0)}|${sim.users}|${sim.userProgress.toFixed(1)}`;
+  const key = `${s.totalApiRequests}|${s.totalDbRequests}|${apiOk}|${apiErr}|${dbOk}|${dbErr}|${sim.particles.length}|${hasActivity}|${sim.users}|${sim.usersGained}|${sim.usersLostToChurn}|${Math.floor(sim.userProgress)}|${sim.churnProgress}`;
   if (key === _lastStats) return;
   _lastStats = key;
 
@@ -302,9 +302,11 @@ function updateStats() {
   content.innerHTML = `
     <div class="stat-section">Users</div>
     <div class="stat-row"><span class="stat-label">👤 Online</span><span class="stat-value" style="color:#ffd54f;font-size:18px">${sim.users}</span></div>
-    <div class="stat-row"><span class="stat-label">Progress</span><span class="stat-value total">${Math.floor(sim.userProgress)}/${sim.userProgressTarget}</span></div>
-    <div class="stat-section">Health</div>
-    <div class="stat-row"><span class="stat-label">Satisfaction</span><span class="stat-value" style="color:${sim.satisfaction > 60 ? '#66bb6a' : sim.satisfaction > 30 ? '#ffd54f' : '#ef5350'}">${sim.satisfaction.toFixed(0)}%</span></div>
+    <div class="stat-row"><span class="stat-label">Growth</span><span class="stat-value total">${Math.floor(sim.userProgress)}/${sim.userProgressTarget}</span></div>
+    <div class="stat-bar"><div style="width:${Math.min(100, sim.userProgress / sim.userProgressTarget * 100).toFixed(0)}%"></div></div>
+    <div class="stat-row"><span class="stat-label">😡 Churn</span><span class="stat-value total">${Math.floor(sim.churnProgress)}/${sim.churnTarget}</span></div>
+    <div class="stat-bar"><div style="width:${Math.min(100, sim.churnProgress / sim.churnTarget * 100).toFixed(0)}%"></div></div>
+    <div class="stat-row"><span class="stat-label">Gained / Lost</span><span class="stat-value success">+${sim.usersGained}</span><span class="stat-value fail" style="margin-left:4px">−${sim.usersLostToChurn}</span></div>
     <div class="stat-section">API</div>
     <div class="stat-row"><span class="stat-label">sent</span><span class="stat-value total">${s.totalApiRequests}</span></div>
     <div class="stat-row"><span class="stat-label">ok / err</span><span class="stat-value success">${apiOk}</span><span class="stat-value fail" style="margin-left:4px">${apiErr}</span></div>
