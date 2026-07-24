@@ -20,6 +20,11 @@ export class Simulation {
 
     this._simTime = 0;
 
+    /** Колбэк, вызываемый при любом изменении графа (удобно для автосохранения) */
+    this.onChange = null;
+    /** Флаг для подавления onChange (например, при загрузке из localStorage) */
+    this._suppressNotify = false;
+
     // ── Пользователи ──
     /** Количество активных пользователей. Драйвит RPS. */
     this.users = 0;
@@ -106,7 +111,70 @@ export class Simulation {
     if (!def) throw new Error(`Unknown node type: ${type}`);
     const node = def.factory(x, y, opts);
     this.nodes.push(node);
+    this._notifyChange();
     return node;
+  }
+
+  /**
+   * Сериализация графа для localStorage.
+   * Сохраняет узлы (тип, позиция) и связи (индексы узлов).
+   */
+  saveState() {
+    const nodeIndex = new Map(this.nodes.map((n, i) => [n, i]));
+    return {
+      nodes: this.nodes.map(n => ({
+        type: n.type,
+        x: n.x,
+        y: n.y,
+        tier: n.tier || null,
+      })),
+      connections: this.connections.map(c => ({
+        from: nodeIndex.get(c.from.node),
+        to: nodeIndex.get(c.to.node),
+      })),
+    };
+  }
+
+  /**
+   * Восстановление графа из сохранённого состояния.
+   * Очищает текущий граф и создаёт узлы/связи заново.
+   * @param {object} state - сериализованное состояние
+   * @param {object} [settings] - настройки для Backend-узлов
+   */
+  loadState(state, settings) {
+    // Подавляем onChange на время загрузки
+    this._suppressNotify = true;
+    try {
+      // Очистить всё
+      for (const conn of [...this.connections]) {
+        this.removeConnection(conn);
+      }
+      for (const node of [...this.nodes]) {
+        this.nodes = this.nodes.filter(n => n !== node);
+      }
+      this.particles = [];
+
+      // Создать узлы (передаём settings — нужно для Backend)
+      const created = [];
+      for (const nd of state.nodes) {
+        const node = this.createNode(nd.type, nd.x, nd.y, settings);
+        if (nd.tier && node.setTier) {
+          node.setTier(nd.tier);
+        }
+        created.push(node);
+      }
+
+      // Создать связи
+      for (const c of state.connections) {
+        const from = created[c.from];
+        const to = created[c.to];
+        if (from && to) {
+          this.createConnection(from, to);
+        }
+      }
+    } finally {
+      this._suppressNotify = false;
+    }
   }
 
   /** Удалить узел и все его связи */
@@ -126,6 +194,7 @@ export class Simulation {
       return true;
     });
     this.nodes = this.nodes.filter(n => n !== node);
+    this._notifyChange();
   }
 
   /** Создать связь между двумя узлами (если возможна) */
@@ -135,6 +204,7 @@ export class Simulation {
         if (outPort.canConnectTo(inPort)) {
           const conn = new Connection(outPort, inPort);
           this.connections.push(conn);
+          this._notifyChange();
           return conn;
         }
       }
@@ -147,6 +217,21 @@ export class Simulation {
     this.particles = this.particles.filter(p => p.connection !== conn);
     conn.destroy();
     this.connections = this.connections.filter(c => c !== conn);
+    this._notifyChange();
+  }
+
+  /** Внутренний метод: дёргает onChange, если не подавлен */
+  _notifyChange() {
+    if (this._suppressNotify) return;
+    if (this.onChange) this.onChange();
+  }
+
+  /**
+   * Ручной вызов onChange — для случаев, когда состояние меняется
+   * в обход методов Simulation (например, drag узла).
+   */
+  notifyChange() {
+    this._notifyChange();
   }
 
   /** Создать частицу и добавить в симуляцию */

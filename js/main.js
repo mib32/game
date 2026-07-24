@@ -177,6 +177,7 @@ canvas.addEventListener('mouseup', (e) => {
   const hitNode = hitTest(pos.x, pos.y);
 
   if (dragTarget) {
+    sim.notifyChange();
     dragTarget = null;
     dragState = null;
   } else if (dragState) {
@@ -461,19 +462,58 @@ if (ctlAutoRate) {
   });
 }
 
+// --- Сохранение/загрузка графа ---
+const GRAPH_KEY = 'sim-graph';
+
+/** Debounced-сохранение графа в localStorage */
+let _graphSaveTimer = null;
+function saveGraphDebounced() {
+  if (_graphSaveTimer) clearTimeout(_graphSaveTimer);
+  _graphSaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(GRAPH_KEY, JSON.stringify(sim.saveState()));
+    } catch (_) { /* ignore */ }
+  }, 150);
+}
+
+/** Синхронное сохранение (для первого запуска, пока onChange ещё не подключён) */
+function saveGraphNow() {
+  if (_graphSaveTimer) clearTimeout(_graphSaveTimer);
+  try {
+    localStorage.setItem(GRAPH_KEY, JSON.stringify(sim.saveState()));
+  } catch (_) { /* ignore */ }
+}
+
+function loadGraph() {
+  try {
+    const raw = localStorage.getItem(GRAPH_KEY);
+    if (raw) {
+      const state = JSON.parse(raw);
+      if (state.nodes && state.nodes.length > 0) {
+        sim.loadState(state, settings);
+        return true;
+      }
+    }
+  } catch (_) { /* ignore */ }
+  return false;
+}
+
 // --- Инициализация ---
 buildPalette();
 
-// Размещаем демо-узлы
-const ts = sim.createNode('TrafficSource', 150, 200);
-const be = sim.createNode('Backend', 400, 200, settings);
-const pg = sim.createNode('PostgreSQL', 650, 200);
-
-if (window.location.search.includes('test')) {
+if (!loadGraph()) {
+  // Первый запуск — размещаем демо-схему
+  const ts = sim.createNode('TrafficSource', 150, 200);
+  const be = sim.createNode('Backend', 400, 200, settings);
+  const pg = sim.createNode('PostgreSQL', 650, 200);
   sim.createConnection(ts, be);
   sim.createConnection(be, pg);
+  saveGraphNow();
   requestRender();
 }
+
+// Автосохранение графа при любом изменении (debounced)
+sim.onChange = () => saveGraphDebounced();
 
 requestAnimationFrame(frame);
 
