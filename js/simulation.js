@@ -1,6 +1,7 @@
 import { TrafficSource } from './nodes/TrafficSource.js';
 import { Backend } from './nodes/Backend.js';
 import { PostgreSQL } from './nodes/PostgreSQL.js';
+import { PgBouncer } from './nodes/PgBouncer.js';
 import { Connection } from './core/Connection.js';
 import { Particle } from './core/Particle.js';
 import { StatsCollector } from './core/StatsCollector.js';
@@ -82,6 +83,13 @@ export class Simulation {
       outputs: [],
       factory: (x, y) => new PostgreSQL(x, y),
     },
+    PgBouncer: {
+      label: 'PgBouncer',
+      color: '#4a3020',
+      inputs: [{ type: 'sql' }],
+      outputs: [{ type: 'sql' }],
+      factory: (x, y, opts) => new PgBouncer(x, y, opts),
+    },
   };
 
   /** Зарегистрировать спавн API-запроса (для rate-метрики) */
@@ -127,6 +135,7 @@ export class Simulation {
         x: n.x,
         y: n.y,
         tier: n.tier || null,
+        poolSize: n.poolSize || null,
       })),
       connections: this.connections.map(c => ({
         from: nodeIndex.get(c.from.node),
@@ -161,6 +170,10 @@ export class Simulation {
         if (nd.tier && node.setTier) {
           node.setTier(nd.tier);
         }
+        // Восстанавливаем poolSize для PgBouncer
+        if (nd.poolSize && node.poolSize !== undefined) {
+          node.poolSize = nd.poolSize;
+        }
         created.push(node);
       }
 
@@ -179,6 +192,11 @@ export class Simulation {
 
   /** Удалить узел и все его связи */
   removeNode(node) {
+    // Даём узлу возможность очистить свои специфичные данные (очереди, прокси и т.п.)
+    if (typeof node.cleanup === 'function') {
+      node.cleanup(this);
+    }
+
     const toRemove = [];
     for (const port of [...node.inputs, ...node.outputs]) {
       for (const conn of port.connections) {
@@ -191,6 +209,8 @@ export class Simulation {
     this.particles = this.particles.filter(p => {
       if (p.state === 'pending' && p._parentNode === node) return false;
       if (p.state === 'processing' && node._activeParticles && node._activeParticles.includes(p)) return false;
+      // Удаляем только queued-частицы, принадлежащие этому узлу (прибывшие на него)
+      if (p.state === 'queued' && p.connection && p.connection.to.node === node) return false;
       return true;
     });
     this.nodes = this.nodes.filter(n => n !== node);

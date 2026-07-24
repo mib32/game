@@ -118,6 +118,7 @@ body {
 
 .palette-item.source  { background: #2d2d2d; color: #ccc; }
 .palette-item.backend { background: #3d3520; color: #ffd54f; }
+.palette-item.pgbouncer { background: #3d2a1a; color: #ff9800; }
 .palette-item.database { background: #1a2d3d; color: #64b5f6; }
 
 /* ── Generate button ─────────────────────────────────── */

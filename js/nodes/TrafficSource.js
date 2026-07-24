@@ -12,11 +12,15 @@ export class TrafficSource extends Node {
       color: '#3a3a3a',
       inputs: [],
       outputs: [{ type: 'api' }],
+      allowMultipleOutgoing: true, // round-robin: может отправлять на несколько Backend
     });
 
     /** Запросов в секунду в автоматическом режиме (0 = только ручной) */
     this.autoRate = 0;
     this._spawnAccumulator = 0;
+
+    /** Индекс для round-robin по выходным соединениям */
+    this._rrIndex = 0;
   }
 
   /**
@@ -33,16 +37,29 @@ export class TrafficSource extends Node {
     }
   }
 
-  /** Сгенерировать один API-запрос на все выходные связи */
+  /**
+   * Сгенерировать один API-запрос.
+   * Отправляет на ОДНО выходное соединение по round-robin,
+   * а не дублирует на все одновременно (чтобы не ломать статистику).
+   */
   generateRequest(sim) {
-    // Регистрируем спавн для подсчёта эффективного RPS
-    sim.recordApiSpawn();
-
+    // Собираем все выходные соединения в плоский список
+    const allConns = [];
     for (const outPort of this.outputs) {
       for (const conn of outPort.connections) {
-        sim.stats.inc('requests_total', { type: 'api' });
-        sim.spawnParticle(new Particle('api', conn));
+        allConns.push(conn);
       }
     }
+
+    if (allConns.length === 0) return;
+
+    // Round-robin: берём следующее соединение по кругу
+    const conn = allConns[this._rrIndex % allConns.length];
+    this._rrIndex++;
+
+    // Регистрируем спавн для подсчёта эффективного RPS
+    sim.recordApiSpawn();
+    sim.stats.inc('requests_total', { type: 'api' });
+    sim.spawnParticle(new Particle('api', conn));
   }
 }

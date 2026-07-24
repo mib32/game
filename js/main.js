@@ -78,6 +78,7 @@ function buildPalette() {
     if (type === 'TrafficSource') el.classList.add('source');
     else if (type === 'Backend') el.classList.add('backend');
     else if (type === 'PostgreSQL') el.classList.add('database');
+    else if (type === 'PgBouncer') el.classList.add('pgbouncer');
 
     el.addEventListener('click', () => {
       document.querySelectorAll('.palette-item').forEach(e => e.classList.remove('selected'));

@@ -28,6 +28,16 @@ export class Node {
     this.inputs = (config.inputs || []).map(p => new Port(this, 'input', p.type));
     /** @type {Port[]} */
     this.outputs = (config.outputs || []).map(p => new Port(this, 'output', p.type));
+
+    /** Флаг: узел в процессе удаления. Блокирует spawn новых частиц при каскадном kill. */
+    this._isDying = false;
+
+    /**
+     * Разрешены ли множественные исходящие соединения с одного выходного порта.
+     * По умолчанию false — каждый выход может иметь только одно соединение.
+     * TrafficSource ставит true, потому что использует round-robin.
+     */
+    this.allowMultipleOutgoing = config.allowMultipleOutgoing ?? false;
   }
 
   /** Bounding box для hit-testing */
@@ -55,5 +65,14 @@ export class Node {
   receive(particle, sim) {
     // Базовая реализация — просто поглощает
     return null;
+  }
+
+  /**
+   * Вызывается при удалении узла. Подклассы ДОЛЖНЫ вызвать super.cleanup(sim)
+   * и затем убить все свои частицы с каскадом вверх по цепочке зависимостей.
+   * @param {import('../simulation.js').Simulation} sim
+   */
+  cleanup(sim) {
+    this._isDying = true;
   }
 }

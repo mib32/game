@@ -105,6 +105,12 @@ export class Renderer {
       const db = node.dbSize;
       return `${conn}/${max} conn · DB: ${db}`;
     }
+    if (node.type === 'PgBouncer') {
+      const active = node.activeConnections;
+      const max = node.poolSize;
+      const q = node.queueLength;
+      return `${active}/${max} pool · queue: ${q}`;
+    }
     if (node.type === 'Backend' && node.pendingParents > 0) {
       return `pending: ${node.pendingParents}`;
     }
@@ -139,6 +145,10 @@ export class Renderer {
     // Визуальная индикация при перегрузке PostgreSQL
     if (node.type === 'PostgreSQL' && node.activeConnections >= node.maxConnections) {
       color = '#3a1a1a'; // красноватый оттенок
+    }
+    // Визуальная индикация при заполненном пуле PgBouncer
+    if (node.type === 'PgBouncer' && node.activeConnections >= node.poolSize) {
+      color = '#5a3020'; // более насыщенный янтарный
     }
 
     const rx = 8, ry = 8;
@@ -237,6 +247,27 @@ export class Renderer {
 
         // Кольцо ожидания
         ctx.strokeStyle = 'rgba(255, 213, 79, 0.3)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+        ctx.stroke();
+        continue;
+      }
+
+      // В очереди PgBouncer — оранжевая пульсация
+      if (p.state === 'queued') {
+        const pulse = Math.sin(time * 0.006 + p.id * 0.7) * 0.3 + 0.7;
+        const r = 5 * pulse;
+        ctx.fillStyle = '#ff9800';
+        ctx.shadowColor = '#ff9800';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Кольцо ожидания
+        ctx.strokeStyle = 'rgba(255, 152, 0, 0.3)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);

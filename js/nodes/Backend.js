@@ -41,6 +41,14 @@ export class Backend extends Node {
     this.maxProcessingTime = opts.processingMax ?? 1500;
   }
 
+  /** Проверить, есть ли хотя бы одно выходное соединение */
+  _hasOutputConnection() {
+    for (const outPort of this.outputs) {
+      if (outPort.connections.length > 0) return true;
+    }
+    return false;
+  }
+
   /** Применить новые настройки (из слайдеров) */
   applySettings(opts) {
     if (opts.timeoutMs !== undefined)        this.timeoutMs = opts.timeoutMs;
@@ -58,6 +66,18 @@ export class Backend extends Node {
    * Последовательный режим: spawn первого, остальные — по завершению.
    */
   receive(particle, sim) {
+    // Если узел умирает — не принимаем новые запросы
+    if (this._isDying) return null;
+
+    // Если нет выходных соединений — запросу некуда идти, фейлим сразу
+    if (!this._hasOutputConnection()) {
+      particle.state = 'error';
+      particle.x = this.x;
+      particle.y = this.y;
+      sim.stats.inc('requests_outcome', { type: 'api', status: 'error' });
+      return null;
+    }
+
     particle.state = 'pending';
     particle.x = this.x;
     particle.y = this.y;
@@ -132,7 +152,7 @@ export class Backend extends Node {
 
       if (this.onTimeout === 'abort' && p._children) {
         for (const child of p._children) {
-          if (child.state === 'traveling' || child.state === 'processing') {
+          if (child.state === 'traveling' || child.state === 'processing' || child.state === 'queued') {
             child.state = 'error';
             sim.stats.inc('requests_outcome', { type: 'sql', status: 'error' });
           }
@@ -198,5 +218,30 @@ export class Backend extends Node {
       sim.stats.inc('requests_outcome', { type: 'api', status: 'success' });
     }
     parentParticle.stateChangedAt = null;
+  }
+
+  /**
+   * Очистка при удалении узла — убиваем все pending API-запросы и их детей.
+   * Каскад вверх не нужен: API-запросы не имеют родителей (приходят от TrafficSource).
+   */
+  cleanup(sim) {
+    super.cleanup(sim);
+
+    for (const p of this._pending) {
+      p.state = 'error';
+      sim.stats.inc('requests_outcome', { type: 'api', status: 'error' });
+
+      // Убиваем всех детей (SQL-запросы), где бы они ни находились
+      if (p._children) {
+        for (const child of p._children) {
+          if (child.state === 'traveling' || child.state === 'processing' || child.state === 'queued') {
+            child.state = 'error';
+            sim.stats.inc('requests_outcome', { type: 'sql', status: 'error' });
+          }
+        }
+      }
+    }
+    this._pending.clear();
+    this.pendingParents = 0;
   }
 }

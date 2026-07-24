@@ -54,6 +54,9 @@ export class PostgreSQL extends Node {
    * Если нет: DROP → error.
    */
   receive(particle, sim) {
+    // Если узел умирает — не принимаем новые запросы
+    if (this._isDying) return null;
+
     if (this.activeConnections >= this.maxConnections) {
       // At capacity → DROP
       particle.state = 'error';
@@ -82,6 +85,11 @@ export class PostgreSQL extends Node {
     const completed = [];
 
     for (const p of this._activeParticles) {
+      // Если частицу уже убили каскадным kill — просто вычищаем
+      if (p.state !== 'processing') {
+        completed.push(p);
+        continue;
+      }
       const processingTime = this._getProcessingTime(p);
       if (simTime - p.processingStartedAt >= processingTime) {
         completed.push(p);
@@ -90,12 +98,14 @@ export class PostgreSQL extends Node {
 
     for (const p of completed) {
       this._activeParticles = this._activeParticles.filter(x => x !== p);
-      p.state = 'success';
-      sim.stats.inc('requests_outcome', { type: 'sql', status: 'success' });
-      this.dbSize++;
-
-      // Уведомляем родительский Backend о завершении ребёнка
-      this._notifyParent(p, true, sim);
+      // Не перезаписываем состояние, если частица уже в терминальном состоянии
+      if (p.state === 'processing') {
+        p.state = 'success';
+        sim.stats.inc('requests_outcome', { type: 'sql', status: 'success' });
+        this.dbSize++;
+        // Уведомляем родительский Backend о завершении ребёнка
+        this._notifyParent(p, true, sim);
+      }
     }
   }
 
@@ -114,5 +124,22 @@ export class PostgreSQL extends Node {
     if (parent && parent._parentNode) {
       parent._parentNode.onChildComplete(parent, success, sim);
     }
+  }
+
+  /**
+   * Очистка при удалении узла — убиваем все активные запросы с каскадом вверх.
+   * Как sudo pkill: все дочерние запросы падают, родители узнают об ошибке.
+   */
+  cleanup(sim) {
+    super.cleanup(sim);
+
+    // Убиваем все запросы в процессинге
+    for (const p of this._activeParticles) {
+      p.state = 'error';
+      sim.stats.inc('requests_outcome', { type: 'sql', status: 'error' });
+      // Каскад: уведомляем родителя о провале
+      this._notifyParent(p, false, sim);
+    }
+    this._activeParticles = [];
   }
 }
