@@ -417,26 +417,52 @@ ctlDbMax.addEventListener('input', () => {
 });
 
 // Processing time range
+// Логарифмическая шкала: позиция слайдера (0-1000) → реальное значение (1-10000ms)
+// Даёт гранулированный контроль на малых значениях (1-50ms) и более грубый на больших
+const TIME_LOG_MIN = Math.log10(1);     // log10(1) = 0
+const TIME_LOG_MAX = Math.log10(10000); // log10(10000) = 4
+
+/** Конвертирует позицию слайдера (0-1000) в миллисекунды (1-10000) по экспоненциальной шкале */
+function sliderToMs(sliderVal) {
+  const logVal = TIME_LOG_MIN + (TIME_LOG_MAX - TIME_LOG_MIN) * (sliderVal / 1000);
+  return Math.round(Math.pow(10, logVal));
+}
+
+/** Конвертирует миллисекунды обратно в позицию слайдера (0-1000) */
+function msToSlider(msVal) {
+  const logVal = Math.log10(Math.max(1, msVal));
+  return Math.round((logVal - TIME_LOG_MIN) / (TIME_LOG_MAX - TIME_LOG_MIN) * 1000);
+}
+
 const dbTimeVal = document.getElementById('val-db-time');
 const ctlTimeMin = document.getElementById('ctl-time-min');
 const ctlTimeMax = document.getElementById('ctl-time-max');
+
+// Инициализация позиций слайдеров из сохранённых настроек (или дефолтов)
+ctlTimeMin.value = msToSlider(settings.processingMin);
+ctlTimeMax.value = msToSlider(settings.processingMax);
 
 function updateDbTimeLabel() {
   dbTimeVal.textContent = settings.processingMin + ' \u2013 ' + settings.processingMax + 'ms';
 }
 
 ctlTimeMin.addEventListener('input', () => {
-  const [vMin, vMax] = clampRange(ctlTimeMin, ctlTimeMax, 'processingMin');
-  settings.processingMin = vMin;
-  settings.processingMax = vMax;
+  const [vMinSlider, vMaxSlider] = clampRange(ctlTimeMin, ctlTimeMax, 'processingMin');
+  settings.processingMin = sliderToMs(vMinSlider);
+  settings.processingMax = sliderToMs(vMaxSlider);
+  // Синхронизируем позиции слайдеров обратно (на случай округления при clamp)
+  ctlTimeMin.value = vMinSlider;
+  ctlTimeMax.value = vMaxSlider;
   saveSettingsDebounced();
   applySettingsToNodes();
   updateDbTimeLabel();
 });
 ctlTimeMax.addEventListener('input', () => {
-  const [vMin, vMax] = clampRange(ctlTimeMin, ctlTimeMax, 'processingMax');
-  settings.processingMin = vMin;
-  settings.processingMax = vMax;
+  const [vMinSlider, vMaxSlider] = clampRange(ctlTimeMin, ctlTimeMax, 'processingMax');
+  settings.processingMin = sliderToMs(vMinSlider);
+  settings.processingMax = sliderToMs(vMaxSlider);
+  ctlTimeMin.value = vMinSlider;
+  ctlTimeMax.value = vMaxSlider;
   saveSettingsDebounced();
   applySettingsToNodes();
   updateDbTimeLabel();
