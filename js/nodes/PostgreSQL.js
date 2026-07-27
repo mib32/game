@@ -19,6 +19,7 @@ export class PostgreSQL extends Node {
     this.maxConnections = PostgreSQL.tierConfig[tier].maxConn;
     this.cpu = PostgreSQL.tierConfig[tier].cpu;
     this.dbSize = 0; // растёт с каждым успешным запросом
+    this.dbSizeCoeff = 1.0; // коэффициент влияния DB size на время запроса (0.0 – 1.0)
     this._activeParticles = []; // частицы в процессинге
   }
 
@@ -46,6 +47,11 @@ export class PostgreSQL extends Node {
       p.state = 'error';
     }
     this._activeParticles = [];
+  }
+
+  /** Применить глобальные настройки (из слайдеров) */
+  applySettings(opts) {
+    if (opts.dbSizeCoeff !== undefined) this.dbSizeCoeff = opts.dbSizeCoeff;
   }
 
   /**
@@ -112,8 +118,10 @@ export class PostgreSQL extends Node {
   /** Вычислить время процессинга для конкретного запроса */
   _getProcessingTime(particle) {
     const base = particle.baseProcessingTime || 500;
-    // dbSize добавляет задержку: каждая 100 успешных запросов = +100ms
-    const dbPenalty = Math.floor(this.dbSize / 100) * 100;
+    // Штраф за размер БД: каждые 100 успешных запросов добавляют (100 * dbSizeCoeff)ms
+    // При coeff=1.0 — стандартное поведение (+100ms/100 запросов)
+    // При coeff=0.0 — размер БД не влияет на время запроса
+    const dbPenalty = Math.floor(this.dbSize / 100) * Math.round(100 * this.dbSizeCoeff);
     return base + dbPenalty;
   }
 

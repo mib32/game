@@ -5,7 +5,12 @@
  */
 
 /** Global particle fly speed in progress/second (1.0 = instant, 0.1 = slow) */
-export const PARTICLE_SPEED = 0.75;
+export let PARTICLE_SPEED = 2.5; // ~400ms на пролёт (было 0.75 = 1333ms)
+
+/** Обновить глобальную скорость частиц из настроек */
+export function setParticleSpeedFromLatency(latencyMs) {
+  PARTICLE_SPEED = 1000 / Math.max(50, latencyMs);
+}
 
 export class Particle {
   static _nextId = 1;

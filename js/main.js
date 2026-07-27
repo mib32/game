@@ -1,6 +1,8 @@
 import { Simulation } from './simulation.js';
 import { Renderer } from './renderer.js';
 import { Backend } from './nodes/Backend.js';
+import { PostgreSQL } from './nodes/PostgreSQL.js';
+import { setParticleSpeedFromLatency } from './core/Particle.js';
 
 // --- Инициализация ---
 const canvas = document.getElementById('sim-canvas');
@@ -18,6 +20,8 @@ const DEFAULT_SETTINGS = {
   dbRequestsMax: 5,
   processingMin: 300,
   processingMax: 1500,
+  dbSizeCoeff: 1.0, // коэффициент влияния DB size на время запроса (0.0 – 1.0, по умолчанию 1.0 = каждые 100 запросов +100ms)
+  networkLatency: 400, // задержка сети между узлами в мс (50–2000, по умолчанию 400ms)
 };
 
 function loadSettings() {
@@ -47,6 +51,9 @@ const settings = loadSettings();
 function applySettingsToNodes() {
   for (const node of sim.nodes) {
     if (node instanceof Backend) {
+      node.applySettings(settings);
+    }
+    if (node instanceof PostgreSQL) {
       node.applySettings(settings);
     }
   }
@@ -468,6 +475,52 @@ ctlTimeMax.addEventListener('input', () => {
   updateDbTimeLabel();
 });
 
+// DB size impact coefficient — коэффициент влияния размера БД на время запроса
+const dbCoeffVal = document.getElementById('val-db-coeff');
+const dbCoeffValMs = document.getElementById('val-db-coeff-ms');
+const ctlDbCoeff = document.getElementById('ctl-db-coeff');
+
+if (ctlDbCoeff) {
+  function updateDbCoeffLabel() {
+    const coeff = settings.dbSizeCoeff;
+    dbCoeffVal.textContent = coeff.toFixed(1) + '\u00d7';
+    dbCoeffValMs.textContent = Math.round(coeff * 100);
+  }
+
+  // Инициализация из сохранённых настроек
+  ctlDbCoeff.value = Math.round(settings.dbSizeCoeff * 10);
+  updateDbCoeffLabel();
+
+  ctlDbCoeff.addEventListener('input', () => {
+    settings.dbSizeCoeff = Number(ctlDbCoeff.value) / 10;
+    saveSettingsDebounced();
+    applySettingsToNodes();
+    updateDbCoeffLabel();
+  });
+}
+
+// Network latency — задержка сети между узлами (влияет на скорость пролёта частиц)
+const netLatencyVal = document.getElementById('val-net-latency');
+const ctlNetLatency = document.getElementById('ctl-net-latency');
+
+if (ctlNetLatency) {
+  // Инициализация из сохранённых настроек
+  ctlNetLatency.value = settings.networkLatency;
+  setParticleSpeedFromLatency(settings.networkLatency);
+  updateNetLatencyLabel();
+
+  ctlNetLatency.addEventListener('input', () => {
+    settings.networkLatency = Number(ctlNetLatency.value);
+    setParticleSpeedFromLatency(settings.networkLatency);
+    saveSettingsDebounced();
+    updateNetLatencyLabel();
+  });
+
+  function updateNetLatencyLabel() {
+    netLatencyVal.textContent = settings.networkLatency + 'ms';
+  }
+}
+
 // Initialise labels
 timeoutVal.textContent = settings.timeoutMs + 'ms';
 updateDbNLabel();
@@ -538,6 +591,9 @@ if (!loadGraph()) {
   saveGraphNow();
   requestRender();
 }
+
+// Применить сохранённые настройки ко всем узлам после загрузки графа
+applySettingsToNodes();
 
 // Автосохранение графа при любом изменении (debounced)
 sim.onChange = () => saveGraphDebounced();
