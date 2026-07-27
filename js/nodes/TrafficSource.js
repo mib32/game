@@ -26,9 +26,21 @@ export class TrafficSource extends Node {
   /**
    * Автоматический спавн по rate (accumulator-паттерн).
    * Вызывается из Simulation.update каждый кадр.
+   * Back-pressure: новые запросы не генерятся, если у каждого пользователя
+   * уже есть незавершённый API-запрос в системе.
    */
   tick(simTime, dt, sim) {
     if (this.autoRate <= 0) return;
+
+    // Back-pressure: считаем активные API-запросы (не terminal)
+    // Каждый пользователь может иметь только 1 незавершённый запрос
+    if (sim.users > 0) {
+      const activeApi = sim.particles.filter(
+        p => p.type === 'api' && p.state !== 'success' && p.state !== 'error'
+      ).length;
+      if (activeApi >= sim.users) return;
+    }
+
     const dtSec = dt / 1000;
     this._spawnAccumulator += this.autoRate * dtSec;
     while (this._spawnAccumulator >= 1) {
