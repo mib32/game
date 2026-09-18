@@ -58,6 +58,56 @@ export class Simulation {
 
     /** @type {StatsCollector} */
     this.stats = new StatsCollector();
+
+    // ── Режим уровня (fixed users, без роста/чёрна) ──
+    /** Если true — пользователи фиксированы, рост и churn отключены */
+    this.fixedUsers = false;
+    /** Если true — игра в режиме уровня (влияет на сохранение и UI) */
+    this._levelMode = false;
+  }
+
+  /**
+   * Полный сброс симуляции (для загрузки уровня или новой игры).
+   * Очищает ноды, связи, частицы, статистику и экономику.
+   */
+  reset() {
+    // Чистим связи (сначала, т.к. они ссылаются на ноды)
+    for (const conn of [...this.connections]) {
+      conn.destroy();
+    }
+    this.connections = [];
+
+    // Чистим ноды (даём им cleanup для специфичных данных)
+    for (const node of [...this.nodes]) {
+      if (typeof node.cleanup === 'function') {
+        node.cleanup(this);
+      }
+    }
+    this.nodes = [];
+
+    // Чистим частицы
+    this.particles = [];
+
+    // Сбрасываем время
+    this._simTime = 0;
+
+    // Сбрасываем экономику
+    this.users = 0;
+    this.userProgress = 0;
+    this.userProgressTarget = 5;
+    this.usersGained = 0;
+    this.usersLostToChurn = 0;
+    this.churnProgress = 0;
+    this.churnTarget = 5;
+    this._lastApiErrorTime = -Infinity;
+    this._apiSpawnTimestamps = [];
+
+    // Сбрасываем статистику
+    this.stats = new StatsCollector();
+
+    // Сбрасываем флаги уровня
+    this.fixedUsers = false;
+    this._levelMode = false;
   }
 
   /** Реестр типов узлов — pluggable! */
@@ -360,16 +410,20 @@ export class Simulation {
     const deltaApiErr = this.stats.get('requests_outcome', { type: 'api', status: 'error' }) - prevApiError;
 
     // Рост: API-успехи добавляют очки к следующему юзеру
-    this.userProgress += deltaApiOk * 5;
+    // В режиме фиксированных пользователей (уровни) рост отключён
+    if (!this.fixedUsers) {
+      this.userProgress += deltaApiOk * 5;
 
-    while (this.userProgress >= this.userProgressTarget) {
-      this.userProgress -= this.userProgressTarget;
-      this.users += 1;
-      this.usersGained += 1;
-      this.userProgressTarget = 5 + this.users * 2;
+      while (this.userProgress >= this.userProgressTarget) {
+        this.userProgress -= this.userProgressTarget;
+        this.users += 1;
+        this.usersGained += 1;
+        this.userProgressTarget = 5 + this.users * 2;
+      }
     }
 
     // Churn: каждый юзер терпит 5 ошибок прежде чем уйти
+    // (работает даже в fixedUsers — используется как lose condition в уровнях)
     if (deltaApiErr > 0) {
       this.churnProgress += deltaApiErr;
       this._lastApiErrorTime = simTime;

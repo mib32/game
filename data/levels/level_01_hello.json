@@ -1,0 +1,28 @@
+{
+  "id": "level_01_hello",
+  "title": "Hello World",
+  "description": "Твой первый день в роли CTO. Перед тобой Traffic Source (пользователи) и PostgreSQL (база данных). Поставь Backend между ними, чтобы запросы начали доходить.",
+  "hint": "Выбери Backend в палитре слева и кликни на canvas между Source и PostgreSQL. Потом соедини их: кликни на Source, затем на Backend, затем на Backend и PostgreSQL.",
+  "nodes": [
+    { "type": "TrafficSource", "x": 150, "y": 280, "id": "src" },
+    { "type": "PostgreSQL", "x": 550, "y": 280, "tier": "XS", "id": "pg" }
+  ],
+  "connections": [],
+  "availableNodes": ["Backend"],
+  "maxNodes": 4,
+  "startingUsers": 3,
+  "fixedUsers": true,
+  "settings": {
+    "processingMin": 300,
+    "processingMax": 1500,
+    "dbSizeCoeff": 0.0,
+    "networkLatency": 400,
+    "timeoutMs": 5000,
+    "sequential": true,
+    "dbRequestsMin": 1,
+    "dbRequestsMax": 3
+  },
+  "lockedSettings": [],
+  "winCondition": { "type": "apiSuccess", "count": 10 },
+  "loseCondition": null
+}

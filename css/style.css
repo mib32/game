@@ -120,6 +120,12 @@ body {
 .palette-item.backend { background: #3d3520; color: #ffd54f; }
 .palette-item.pgbouncer { background: #3d2a1a; color: #ff9800; }
 .palette-item.database { background: #1a2d3d; color: #64b5f6; }
+.palette-empty {
+  font-size: 11px;
+  color: #666;
+  padding: 6px 0;
+  font-style: italic;
+}
 
 /* ── Generate button ─────────────────────────────────── */
 
@@ -270,4 +276,160 @@ select {
 .stat-bar div {
   height: 100%;
   background: #ccc;
+}
+
+/* ── Level selector ─────────────────────────────────── */
+
+#level-selector h3 {
+  margin-bottom: 6px;
+}
+#level-selector select {
+  width: 100%;
+  padding: 5px 8px;
+  margin-bottom: 6px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.level-buttons {
+  display: flex;
+  gap: 6px;
+}
+.level-buttons button {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #ccc;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.level-buttons button:hover {
+  background: #0f3460;
+  color: #fff;
+}
+
+/* ── Level objective panel ──────────────────────────── */
+
+#level-objective {
+  border-bottom: 1px solid #0f3460;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+#level-objective h3 {
+  color: #ffd54f;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+#lvl-desc {
+  font-size: 11px;
+  color: #999;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+.lvl-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.lvl-progress-bar {
+  flex: 1;
+  height: 6px;
+  border: 1px solid #555;
+  background: transparent;
+}
+.lvl-progress-bar div {
+  height: 100%;
+  background: #4caf50;
+  transition: width 0.2s;
+}
+.lvl-progress-text {
+  font-size: 11px;
+  color: #ccc;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.lvl-hint {
+  font-size: 10px;
+  color: #666;
+  font-style: italic;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ── Win / Lose overlay ─────────────────────────────── */
+
+#level-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  transition: opacity 0.3s;
+}
+#level-overlay.hidden {
+  display: none;
+}
+.overlay-box {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  padding: 32px 40px;
+  text-align: center;
+  max-width: 380px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.overlay-box h2 {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+.overlay-box p {
+  color: #999;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+.overlay-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.overlay-buttons button {
+  padding: 8px 20px;
+  font-size: 13px;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.overlay-buttons button:hover {
+  background: #0f3460;
+  border-color: #1a5276;
+  color: #fff;
+}
+.overlay-buttons button:first-child {
+  background: #1a3a1a;
+  border-color: #2d5a2d;
+}
+.overlay-buttons button:last-child {
+  background: #1a3a5c;
+  border-color: #1a5276;
+}
+
+/* ── Locked slider (disabled) ───────────────────────── */
+
+input[type="range"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

@@ -1,0 +1,32 @@
+{
+  "id": "level_02_bottleneck",
+  "title": "Узкое горло",
+  "description": "50 пользователей ломятся в твою PostgreSQL XS (всего 5 соединений). База захлёбывается, запросы отваливаются. Масштабируйся — или пользователи уйдут.",
+  "hint": "Попробуй добавить ещё один PostgreSQL и соединить его с Backend. Каждый PostgreSQL добавляет свой пул соединений.",
+  "nodes": [
+    { "type": "TrafficSource", "x": 150, "y": 250, "id": "src" },
+    { "type": "Backend", "x": 350, "y": 250, "id": "be" },
+    { "type": "PostgreSQL", "x": 550, "y": 250, "tier": "XS", "id": "pg" }
+  ],
+  "connections": [
+    { "from": "src", "to": "be" },
+    { "from": "be", "to": "pg" }
+  ],
+  "availableNodes": ["PostgreSQL"],
+  "maxNodes": 8,
+  "startingUsers": 50,
+  "fixedUsers": true,
+  "settings": {
+    "processingMin": 300,
+    "processingMax": 1500,
+    "dbSizeCoeff": 0.0,
+    "networkLatency": 400,
+    "timeoutMs": 5000,
+    "sequential": true,
+    "dbRequestsMin": 2,
+    "dbRequestsMax": 5
+  },
+  "lockedSettings": ["processingMin", "processingMax", "timeoutMs", "networkLatency"],
+  "winCondition": { "type": "apiSuccess", "count": 50 },
+  "loseCondition": { "type": "churn", "maxLost": 5 }
+}

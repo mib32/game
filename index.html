@@ -10,10 +10,42 @@
   <div id="app">
     <div id="canvas-container">
       <canvas id="sim-canvas"></canvas>
+      <div id="level-overlay" class="hidden">
+        <div class="overlay-box">
+          <h2 id="overlay-title"></h2>
+          <p id="overlay-desc"></p>
+          <div class="overlay-buttons">
+            <button id="btn-retry">↺ Retry</button>
+            <button id="btn-next">Next Level →</button>
+            <button id="btn-free-mode">🛠️ Free Mode</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="toolbar">
-      <!-- Column 1: Palette + Help -->
+      <!-- Column 1: Level selector + Palette + Help -->
       <div class="toolbar-col">
+        <div class="toolbar-section" id="level-selector">
+          <h3>🎮 Levels</h3>
+          <select id="ctl-level">
+            <option value="">-- Select level --</option>
+          </select>
+          <div class="level-buttons">
+            <button id="btn-level-start">▶ Start</button>
+            <button id="btn-level-free">🛠️ Free</button>
+          </div>
+        </div>
+
+        <div class="toolbar-section" id="level-objective" style="display:none;">
+          <h3>📋 <span id="lvl-title"></span></h3>
+          <p id="lvl-desc"></p>
+          <div class="lvl-progress-wrap">
+            <div class="lvl-progress-bar"><div id="lvl-progress-fill"></div></div>
+            <span class="lvl-progress-text" id="lvl-progress-text">0 / 0</span>
+          </div>
+          <p class="lvl-hint" id="lvl-hint"></p>
+        </div>
+
         <div class="toolbar-section">
           <h3>Nodes</h3>
           <div id="palette"></div>

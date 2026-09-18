@@ -1,0 +1,32 @@
+{
+  "id": "level_03_patience",
+  "title": "Терпеливый бэкенд",
+  "description": "Твоя БД отвечает медленно — SQL-запросы идут по 2-5 секунд. Но Backend настроен с таймаутом 1000ms и обрывает все запросы, не дожидаясь ответа. Настрой таймаут правильно.",
+  "hint": "Таймаут Backend'а должен быть больше максимального времени обработки SQL-запроса. Посмотри на правую панель — увеличь Timeout.",
+  "nodes": [
+    { "type": "TrafficSource", "x": 150, "y": 280, "id": "src" },
+    { "type": "Backend", "x": 350, "y": 280, "id": "be" },
+    { "type": "PostgreSQL", "x": 550, "y": 280, "tier": "XS", "id": "pg" }
+  ],
+  "connections": [
+    { "from": "src", "to": "be" },
+    { "from": "be", "to": "pg" }
+  ],
+  "availableNodes": [],
+  "maxNodes": 3,
+  "startingUsers": 5,
+  "fixedUsers": true,
+  "settings": {
+    "processingMin": 2000,
+    "processingMax": 5000,
+    "dbSizeCoeff": 0.0,
+    "networkLatency": 400,
+    "timeoutMs": 1000,
+    "sequential": false,
+    "dbRequestsMin": 1,
+    "dbRequestsMax": 3
+  },
+  "lockedSettings": ["processingMin", "processingMax", "networkLatency", "dbRequestsMin", "dbRequestsMax"],
+  "winCondition": { "type": "apiSuccess", "count": 20 },
+  "loseCondition": null
+}

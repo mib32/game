@@ -3,11 +3,15 @@ import { Renderer } from './renderer.js';
 import { Backend } from './nodes/Backend.js';
 import { PostgreSQL } from './nodes/PostgreSQL.js';
 import { setParticleSpeedFromLatency } from './core/Particle.js';
+import { LevelManager } from './levels/LevelManager.js';
 
 // --- Инициализация ---
 const canvas = document.getElementById('sim-canvas');
 const renderer = new Renderer(canvas);
 const sim = new Simulation();
+
+// ── Менеджер уровней ──
+const levelManager = new LevelManager(sim);
 
 // --- Настройки (localStorage) ---
 const SETTINGS_KEY = 'sim-settings';
@@ -72,11 +76,20 @@ let needsRender = true;
 let simTime = 0;
 
 // --- Палитра ---
-function buildPalette() {
+/**
+ * Построить палитру узлов. Если activePalette не передан,
+ * показывает все типы (Free Mode). При наличии уровня —
+ * только разрешённые availableNodes.
+ * @param {string[]} [allowed] — список разрешённых типов нод
+ */
+function buildPalette(allowed) {
   const palette = document.getElementById('palette');
   palette.innerHTML = '';
 
   for (const [type, def] of Object.entries(Simulation.nodeTypes)) {
+    // Если задан фильтр — пропускаем ноды не из списка
+    if (allowed && !allowed.includes(type)) continue;
+
     const el = document.createElement('div');
     el.className = 'palette-item';
     el.textContent = def.label;
@@ -97,6 +110,23 @@ function buildPalette() {
     });
 
     palette.appendChild(el);
+  }
+
+  // Если палитра пустая — показываем заглушку
+  if (palette.children.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'palette-empty';
+    empty.textContent = '— no nodes available —';
+    palette.appendChild(empty);
+  }
+}
+
+/** Перестроить палитру с учётом текущего уровня */
+function rebuildPalette() {
+  if (levelManager.active) {
+    buildPalette(levelManager.availableNodes);
+  } else {
+    buildPalette();
   }
 }
 
@@ -122,6 +152,12 @@ canvas.addEventListener('mousedown', (e) => {
   const hitNode = hitTest(pos.x, pos.y);
 
   if (paletteSelected && !hitNode) {
+    // Проверка лимита нод на уровне
+    if (!levelManager.canAddNode()) {
+      // Показываем краткое предупреждение (можно заменить на toast позже)
+      console.warn(`Level limit: max ${levelManager.maxNodes} nodes`);
+      return;
+    }
     sim.createNode(paletteSelected, pos.x, pos.y, settings);
     paletteSelected = null;
     document.querySelectorAll('.palette-item').forEach(e => e.classList.remove('selected'));
@@ -278,6 +314,9 @@ function frame(now) {
 
   sim.update(Math.min(dt, 100), simTime);
 
+  // Проверка условий уровня (если активен)
+  levelManager.checkConditions();
+
   const hasParticles = sim.particles.length > 0;
   if (needsRender || hasParticles || _hadParticles) {
     render();
@@ -301,21 +340,31 @@ function updateStats() {
   const dbOk = s.get('requests_outcome', { type: 'sql', status: 'success' });
   const dbErr = s.get('requests_outcome', { type: 'sql', status: 'error' });
   const hasActivity = true; // always show stats
+  const inLevel = levelManager.active; // в режиме уровня рост отключён
 
-  const key = `${s.totalApiRequests}|${s.totalDbRequests}|${apiOk}|${apiErr}|${dbOk}|${dbErr}|${sim.particles.length}|${hasActivity}|${sim.users}|${sim.usersGained}|${sim.usersLostToChurn}|${Math.floor(sim.userProgress)}|${sim.churnProgress}`;
+  const key = `${s.totalApiRequests}|${s.totalDbRequests}|${apiOk}|${apiErr}|${dbOk}|${dbErr}|${sim.particles.length}|${hasActivity}|${sim.users}|${sim.usersGained}|${sim.usersLostToChurn}|${Math.floor(sim.userProgress)}|${sim.churnProgress}|${inLevel}`;
   if (key === _lastStats) return;
   _lastStats = key;
 
   el.style.display = hasActivity ? 'block' : 'none';
 
+  // Рост и приток юзеров — только в песочнице (free mode)
+  const growthBlock = inLevel ? '' : `
+    <div class="stat-row"><span class="stat-label">Growth</span><span class="stat-value total">${Math.floor(sim.userProgress)}/${sim.userProgressTarget}</span></div>
+    <div class="stat-bar"><div style="width:${Math.min(100, sim.userProgress / sim.userProgressTarget * 100).toFixed(0)}%"></div></div>
+  `;
+
+  const gainedLostBlock = inLevel ? '' : `
+    <div class="stat-row"><span class="stat-label">Gained / Lost</span><span class="stat-value success">+${sim.usersGained}</span><span class="stat-value fail" style="margin-left:4px">−${sim.usersLostToChurn}</span></div>
+  `;
+
   content.innerHTML = `
     <div class="stat-section">Users</div>
     <div class="stat-row"><span class="stat-label">👤 Online</span><span class="stat-value" style="color:#ffd54f;font-size:18px">${sim.users}</span></div>
-    <div class="stat-row"><span class="stat-label">Growth</span><span class="stat-value total">${Math.floor(sim.userProgress)}/${sim.userProgressTarget}</span></div>
-    <div class="stat-bar"><div style="width:${Math.min(100, sim.userProgress / sim.userProgressTarget * 100).toFixed(0)}%"></div></div>
+    ${growthBlock}
     <div class="stat-row"><span class="stat-label">😡 Churn</span><span class="stat-value total">${Math.floor(sim.churnProgress)}/${sim.churnTarget}</span></div>
     <div class="stat-bar"><div style="width:${Math.min(100, sim.churnProgress / sim.churnTarget * 100).toFixed(0)}%"></div></div>
-    <div class="stat-row"><span class="stat-label">Gained / Lost</span><span class="stat-value success">+${sim.usersGained}</span><span class="stat-value fail" style="margin-left:4px">−${sim.usersLostToChurn}</span></div>
+    ${gainedLostBlock}
     <div class="stat-section">API</div>
     <div class="stat-row"><span class="stat-label">sent</span><span class="stat-value total">${s.totalApiRequests}</span></div>
     <div class="stat-row"><span class="stat-label">ok / err</span><span class="stat-value success">${apiOk}</span><span class="stat-value fail" style="margin-left:4px">${apiErr}</span></div>
@@ -324,6 +373,216 @@ function updateStats() {
     <div class="stat-row"><span class="stat-label">ok / err</span><span class="stat-value success">${dbOk}</span><span class="stat-value fail" style="margin-left:4px">${dbErr}</span></div>
     <div class="stat-row"><span class="stat-label">In flight</span><span class="stat-value">${sim.particles.length}</span></div>
   `;
+}
+
+// ── Уровни: UI-функции ───────────────────────────────────
+
+/** Заполнить выпадающий список уровней */
+function populateLevelDropdown() {
+  const select = document.getElementById('ctl-level');
+  if (!select) return;
+  // Сохраняем первый option (placeholder)
+  select.innerHTML = '<option value="">-- Select level --</option>';
+  for (const lvl of levelManager.getLevels()) {
+    const opt = document.createElement('option');
+    opt.value = lvl.id;
+    opt.textContent = `${lvl.title}`;
+    select.appendChild(opt);
+  }
+}
+
+/** Запустить выбранный уровень */
+function startLevel() {
+  const select = document.getElementById('ctl-level');
+  if (!select || !select.value) return;
+
+  const ok = levelManager.loadLevel(select.value);
+  if (!ok) return;
+
+  // Применяем настройки уровня
+  Object.assign(settings, levelManager.levelSettings);
+  saveSettings(settings); // сохраняем в localStorage
+
+  // Обновляем скорость частиц
+  setParticleSpeedFromLatency(settings.networkLatency);
+
+  // Применяем настройки к нодам
+  applySettingsToNodes();
+
+  // Перестраиваем палитру
+  rebuildPalette();
+
+  // Обновляем слайдеры (значения из уровня)
+  updateAllSliders();
+
+  // Показываем/прячем UI уровня
+  showLevelUI(true);
+
+  // Прячем тестовый слайдер
+  const testUsersSection = document.getElementById('ctl-auto-rate')?.closest('.toolbar-section');
+  if (testUsersSection) testUsersSection.style.display = 'none';
+
+  // Обновляем лейблы
+  updateDbTimeLabel();
+  updateDbNLabel();
+  updateDbCoeffLabel?.();
+  updateNetLatencyLabel?.();
+
+  // Сбрасываем симуляционное время для нового уровня
+  simTime = 0;
+
+  requestRender();
+}
+
+/** Выйти из режима уровня в свободный режим */
+function exitToFreeMode() {
+  levelManager.exitLevel();
+
+  // Восстанавливаем настройки из localStorage
+  const saved = loadSettings();
+  Object.assign(settings, saved);
+
+  // Обновляем скорость
+  setParticleSpeedFromLatency(settings.networkLatency);
+
+  // Сбрасываем симуляцию и загружаем демо
+  sim.reset();
+  sim._suppressNotify = true;
+  const ts = sim.createNode('TrafficSource', 150, 200);
+  const be = sim.createNode('Backend', 400, 200, settings);
+  const pg = sim.createNode('PostgreSQL', 650, 200);
+  sim.createConnection(ts, be);
+  sim.createConnection(be, pg);
+  sim._suppressNotify = false;
+
+  // Обновляем UI
+  rebuildPalette();
+  updateAllSliders();
+  showLevelUI(false);
+
+  // Возвращаем тестовый слайдер
+  const testUsersSection = document.getElementById('ctl-auto-rate')?.closest('.toolbar-section');
+  if (testUsersSection) testUsersSection.style.display = '';
+
+  // Сбрасываем время
+  simTime = 0;
+
+  requestRender();
+}
+
+/** Показать/спрятать UI уровня */
+function showLevelUI(visible) {
+  const objective = document.getElementById('level-objective');
+  const overlay = document.getElementById('level-overlay');
+  if (objective) objective.style.display = visible ? 'block' : 'none';
+  if (overlay) overlay.classList.add('hidden');
+
+  // Блокируем/разблокируем слайдеры
+  updateSliderLocks();
+}
+
+/** Обновить панель цели уровня */
+function updateLevelObjective() {
+  const prog = levelManager.getProgress();
+  if (!prog) return;
+
+  const titleEl = document.getElementById('lvl-title');
+  const descEl = document.getElementById('lvl-desc');
+  const fillEl = document.getElementById('lvl-progress-fill');
+  const textEl = document.getElementById('lvl-progress-text');
+  const hintEl = document.getElementById('lvl-hint');
+
+  if (titleEl) titleEl.textContent = prog.title;
+  if (descEl) descEl.textContent = prog.description;
+  if (fillEl) fillEl.style.width = prog.target > 0 ? (prog.current / prog.target * 100).toFixed(0) + '%' : '0%';
+  if (textEl) textEl.textContent = `${prog.current} / ${prog.target} ${prog.label}`;
+  if (hintEl) {
+    // Показываем подсказку через 15 секунд
+    if (prog.time > 15000 && prog.hint) {
+      hintEl.textContent = '💡 ' + prog.hint;
+    } else {
+      hintEl.textContent = '';
+    }
+  }
+}
+
+/** Показать оверлей победы/поражения */
+function showOverlay(isWin) {
+  const overlay = document.getElementById('level-overlay');
+  const title = document.getElementById('overlay-title');
+  const desc = document.getElementById('overlay-desc');
+  const btnNext = document.getElementById('btn-next');
+
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+
+  if (isWin) {
+    title.textContent = '🎉 Level Complete!';
+    title.style.color = '#4caf50';
+    desc.textContent = levelManager.currentLevel?.title || '';
+    if (btnNext) btnNext.style.display = '';
+  } else {
+    title.textContent = '💥 Level Failed';
+    title.style.color = '#f44336';
+    desc.textContent = 'Попробуй другой подход.';
+    if (btnNext) btnNext.style.display = 'none';
+  }
+}
+
+/** Блокировка/разблокировка слайдеров согласно уровню */
+function updateSliderLocks() {
+  // Список всех слайдеров и их ключей настроек
+  const sliderMap = [
+    ['ctl-timeout', 'timeoutMs'],
+    ['ctl-db-min', 'dbRequestsMin'],
+    ['ctl-db-max', 'dbRequestsMax'],
+    ['ctl-time-min', 'processingMin'],
+    ['ctl-time-max', 'processingMax'],
+    ['ctl-db-coeff', 'dbSizeCoeff'],
+    ['ctl-net-latency', 'networkLatency'],
+  ];
+
+  for (const [elId, key] of sliderMap) {
+    const el = document.getElementById(elId);
+    if (!el) continue;
+    if (levelManager.isSettingLocked(key)) {
+      el.disabled = true;
+    } else {
+      el.disabled = false;
+    }
+  }
+
+  // Чекбокс sequential и селект on-timeout тоже блокируем при уровне
+  const ctlSeq = document.getElementById('ctl-sequential');
+  const ctlOnTimeout = document.getElementById('ctl-on-timeout');
+  if (ctlSeq) ctlSeq.disabled = levelManager.isSettingLocked('sequential');
+  if (ctlOnTimeout) ctlOnTimeout.disabled = levelManager.isSettingLocked('onTimeout');
+}
+
+/** Обновить значения всех слайдеров из текущих settings */
+function updateAllSliders() {
+  const timeoutEl = document.getElementById('ctl-timeout');
+  const dbMinEl = document.getElementById('ctl-db-min');
+  const dbMaxEl = document.getElementById('ctl-db-max');
+  const timeMinEl = document.getElementById('ctl-time-min');
+  const timeMaxEl = document.getElementById('ctl-time-max');
+  const dbCoeffEl = document.getElementById('ctl-db-coeff');
+  const netLatEl = document.getElementById('ctl-net-latency');
+  const seqEl = document.getElementById('ctl-sequential');
+  const onTimeoutEl = document.getElementById('ctl-on-timeout');
+
+  if (timeoutEl) timeoutEl.value = settings.timeoutMs;
+  if (dbMinEl) dbMinEl.value = settings.dbRequestsMin;
+  if (dbMaxEl) dbMaxEl.value = settings.dbRequestsMax;
+  // Для логарифмических слайдеров конвертируем обратно
+  if (timeMinEl) timeMinEl.value = msToSlider(settings.processingMin);
+  if (timeMaxEl) timeMaxEl.value = msToSlider(settings.processingMax);
+  if (dbCoeffEl) dbCoeffEl.value = Math.round(settings.dbSizeCoeff * 10);
+  if (netLatEl) netLatEl.value = settings.networkLatency;
+  if (seqEl) seqEl.checked = settings.sequential;
+  if (onTimeoutEl) onTimeoutEl.value = settings.onTimeout;
+
+  updateSliderLocks();
 }
 
 // --- Кнопка Generate ---
@@ -545,9 +804,11 @@ if (ctlAutoRate) {
 // --- Сохранение/загрузка графа ---
 const GRAPH_KEY = 'sim-graph';
 
-/** Debounced-сохранение графа в localStorage */
+/** Debounced-сохранение графа в localStorage (только в Free Mode) */
 let _graphSaveTimer = null;
 function saveGraphDebounced() {
+  // Не сохраняем граф в режиме уровня
+  if (levelManager.active) return;
   if (_graphSaveTimer) clearTimeout(_graphSaveTimer);
   _graphSaveTimer = setTimeout(() => {
     try {
@@ -580,6 +841,72 @@ function loadGraph() {
 
 // --- Инициализация ---
 buildPalette();
+populateLevelDropdown();
+
+// Колбэки менеджера уровней
+levelManager.onWin = () => {
+  showOverlay(true);
+  requestRender();
+};
+levelManager.onLose = () => {
+  showOverlay(false);
+  requestRender();
+};
+levelManager.onProgress = () => {
+  updateLevelObjective();
+};
+
+// ── Кнопки уровня ──
+const btnLevelStart = document.getElementById('btn-level-start');
+const btnLevelFree = document.getElementById('btn-level-free');
+if (btnLevelStart) btnLevelStart.addEventListener('click', startLevel);
+if (btnLevelFree) btnLevelFree.addEventListener('click', exitToFreeMode);
+
+// ── Оверлей (победа/поражение) ──
+const btnRetry = document.getElementById('btn-retry');
+const btnNext = document.getElementById('btn-next');
+const btnFreeMode = document.getElementById('btn-free-mode');
+if (btnRetry) {
+  btnRetry.addEventListener('click', () => {
+    document.getElementById('level-overlay').classList.add('hidden');
+    levelManager.retryLevel();
+    Object.assign(settings, levelManager.levelSettings);
+    setParticleSpeedFromLatency(settings.networkLatency);
+    applySettingsToNodes();
+    updateAllSliders();
+    updateDbTimeLabel();
+    updateDbNLabel();
+    simTime = 0;
+    requestRender();
+  });
+}
+if (btnNext) {
+  btnNext.addEventListener('click', () => {
+    document.getElementById('level-overlay').classList.add('hidden');
+    const hasNext = levelManager.nextLevel();
+    if (hasNext) {
+      Object.assign(settings, levelManager.levelSettings);
+      setParticleSpeedFromLatency(settings.networkLatency);
+      applySettingsToNodes();
+      updateAllSliders();
+      updateDbTimeLabel();
+      updateDbNLabel();
+      // Обновить селектор уровней
+      const select = document.getElementById('ctl-level');
+      if (select && levelManager.currentLevel) select.value = levelManager.currentLevel.id;
+      simTime = 0;
+    } else {
+      exitToFreeMode();
+    }
+    requestRender();
+  });
+}
+if (btnFreeMode) {
+  btnFreeMode.addEventListener('click', () => {
+    document.getElementById('level-overlay').classList.add('hidden');
+    exitToFreeMode();
+  });
+}
 
 if (!loadGraph()) {
   // Первый запуск — размещаем демо-схему
